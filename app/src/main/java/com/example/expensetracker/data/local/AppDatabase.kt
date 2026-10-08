@@ -1,0 +1,213 @@
+package com.example.expensetracker.data.local
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import java.util.UUID
+import java.util.concurrent.Executors
+
+@Database(
+    entities = [
+        TransactionEntity::class,
+        CategoryEntity::class,
+        CategoryMappingEntity::class,
+        RecurringExpenseEntity::class,
+        TestNotificationEntity::class,
+        PaymentTemplateEntity::class
+    ],
+    version = 6,
+    exportSchema = false
+)
+abstract class AppDatabase : RoomDatabase() {
+
+    abstract fun transactionDao(): TransactionDao
+    abstract fun categoryDao(): CategoryDao
+    abstract fun categoryMappingDao(): CategoryMappingDao
+    abstract fun recurringExpenseDao(): RecurringExpenseDao
+    abstract fun testNotificationDao(): TestNotificationDao
+    abstract fun paymentTemplateDao(): PaymentTemplateDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `categories` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `category_mappings` (
+                        `id` TEXT NOT NULL,
+                        `pattern` TEXT NOT NULL,
+                        `categoryName` TEXT NOT NULL,
+                        `priority` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN originalText TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `recurring_expenses` (
+                        `id` TEXT NOT NULL,
+                        `merchant` TEXT NOT NULL,
+                        `amount` REAL NOT NULL,
+                        `frequency` TEXT NOT NULL,
+                        `intervalDays` INTEGER NOT NULL,
+                        `lastTransactionTimestamp` INTEGER NOT NULL,
+                        `confirmedAt` INTEGER NOT NULL,
+                        `active` INTEGER NOT NULL DEFAULT 1,
+                        `dismissed` INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `test_notifications` (
+                        `id` TEXT NOT NULL,
+                        `receivedAt` INTEGER NOT NULL,
+                        `packageName` TEXT NOT NULL,
+                        `notificationId` INTEGER NOT NULL,
+                        `notificationTag` TEXT,
+                        `notificationKey` TEXT,
+                        `title` TEXT,
+                        `text` TEXT,
+                        `bigText` TEXT,
+                        `textLines` TEXT,
+                        `subText` TEXT,
+                        `summaryText` TEXT,
+                        `titleBig` TEXT,
+                        `rawExtras` TEXT,
+                        `status` TEXT NOT NULL,
+                        `detectedPayment` INTEGER NOT NULL,
+                        `amount` REAL,
+                        `transactionType` TEXT,
+                        `merchant` TEXT,
+                        `source` TEXT,
+                        `failureReason` TEXT,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `payment_templates` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `transactionType` TEXT NOT NULL,
+                        `sampleText` TEXT NOT NULL,
+                        `templatePattern` TEXT NOT NULL,
+                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("ALTER TABLE test_notifications ADD COLUMN detectionMethod TEXT")
+                db.execSQL("ALTER TABLE test_notifications ADD COLUMN matchedTemplateName TEXT")
+                db.execSQL("ALTER TABLE test_notifications ADD COLUMN accountNumber TEXT")
+                db.execSQL("ALTER TABLE test_notifications ADD COLUMN referenceNumber TEXT")
+                db.execSQL("ALTER TABLE test_notifications ADD COLUMN confidence TEXT")
+            }
+        }
+
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "expense_tracker_db"
+                )
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addCallback(object : RoomDatabase.Callback() {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        super.onCreate(db)
+                        populateDefaultCategories(context.applicationContext)
+                    }
+                })
+                .build()
+                INSTANCE = instance
+                populateDefaultCategories(context.applicationContext)
+                instance
+            }
+        }
+
+        private fun populateDefaultCategories(context: Context) {
+            Executors.newSingleThreadExecutor().execute {
+                try {
+                    val db = INSTANCE ?: return@execute
+                    val existing = db.categoryDao().getAllCategoriesSync()
+
+                    // 1. Deduplicate existing categories in DB if duplicates exist
+                    val seenNames = mutableSetOf<String>()
+                    val duplicatesToDelete = mutableListOf<String>()
+                    for (cat in existing) {
+                        val key = cat.name.trim().lowercase()
+                        if (seenNames.contains(key)) {
+                            duplicatesToDelete.add(cat.id)
+                        } else {
+                            seenNames.add(key)
+                        }
+                    }
+                    duplicatesToDelete.forEach { dupId ->
+                        db.categoryDao().deleteCategoryById(dupId)
+                    }
+
+                    // 2. Populate defaults if database has no categories
+                    val currentAfterCleanup = db.categoryDao().getAllCategoriesSync()
+                    if (currentAfterCleanup.isEmpty()) {
+                        val defaultNames = listOf(
+                            "Food",
+                            "Fuel",
+                            "Shopping",
+                            "Bills",
+                            "Entertainment",
+                            "Travel",
+                            "Other"
+                        )
+                        defaultNames.forEach { name ->
+                            db.categoryDao().insertCategory(
+                                CategoryEntity(id = UUID.randomUUID().toString(), name = name)
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore background init error if DB not ready
+                }
+            }
+        }
+    }
+}
