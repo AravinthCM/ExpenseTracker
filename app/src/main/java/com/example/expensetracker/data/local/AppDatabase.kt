@@ -20,9 +20,11 @@ import java.util.concurrent.Executors
         SplitGroupEntity::class,
         SplitGroupMemberEntity::class,
         ExpenseSplitEntity::class,
-        ExpenseSplitShareEntity::class
+        ExpenseSplitShareEntity::class,
+        RepaymentEntity::class,
+        RepaymentAllocationEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -35,6 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun paymentTemplateDao(): PaymentTemplateDao
     abstract fun splitGroupDao(): SplitGroupDao
     abstract fun expenseSplitDao(): ExpenseSplitDao
+    abstract fun repaymentDao(): RepaymentDao
 
     companion object {
         @Volatile
@@ -221,6 +224,49 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `repayments` (
+                        `id` TEXT NOT NULL,
+                        `groupId` TEXT NOT NULL,
+                        `memberId` TEXT NOT NULL,
+                        `amountPaise` INTEGER NOT NULL,
+                        `unallocatedAmountPaise` INTEGER NOT NULL DEFAULT 0,
+                        `paymentDate` TEXT NOT NULL,
+                        `timestamp` INTEGER NOT NULL,
+                        `linkedTransactionId` TEXT,
+                        `note` TEXT,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`groupId`) REFERENCES `split_groups`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT,
+                        FOREIGN KEY(`memberId`) REFERENCES `split_group_members`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT,
+                        FOREIGN KEY(`linkedTransactionId`) REFERENCES `transactions`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_repayments_linkedTransactionId` ON `repayments` (`linkedTransactionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_repayments_groupId` ON `repayments` (`groupId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_repayments_memberId` ON `repayments` (`memberId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `repayment_allocations` (
+                        `id` TEXT NOT NULL,
+                        `repaymentId` TEXT NOT NULL,
+                        `shareId` TEXT NOT NULL,
+                        `allocatedAmountPaise` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`repaymentId`) REFERENCES `repayments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`shareId`) REFERENCES `expense_split_shares`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_repayment_allocations_repaymentId` ON `repayment_allocations` (`repaymentId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_repayment_allocations_shareId` ON `repayment_allocations` (`shareId`)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -228,7 +274,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "expense_tracker_db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)

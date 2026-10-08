@@ -23,4 +23,8 @@ object CurrencyFormatter {
         val formattedNumber = format.format(Math.abs(amount))
         return if (isIncome) "+₹$formattedNumber" else "-₹$formattedNumber"
     }
+
+    fun formatPaise(paise: Long): String {
+        return format(paise / 100.0)
+    }
 }

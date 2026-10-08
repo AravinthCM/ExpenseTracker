@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -64,9 +65,12 @@ import com.example.expensetracker.ui.viewmodel.TransactionViewModel
 
 import com.example.expensetracker.ui.TestDataScreen
 
+import com.example.expensetracker.ui.SettleUpScreen
+
 enum class Screen(val title: String, val icon: ImageVector) {
     Overview("Overview", Icons.Default.Home),
     Transactions("Transactions", Icons.Default.List),
+    SettleUp("Settle Up", Icons.Default.Share),
     Analytics("Analytics", Icons.Default.DateRange),
     Management("Categories & rules", Icons.Default.Settings),
     TestData("Test Data", Icons.Default.Info),
@@ -109,6 +113,7 @@ fun ExpenseTrackerApp(
     val paymentTemplates by viewModel.paymentTemplatesState.collectAsState()
     val splitGroups by viewModel.splitGroupsState.collectAsState()
     val expenseSplits by viewModel.expenseSplitsState.collectAsState()
+    val repayments by viewModel.repaymentsState.collectAsState()
 
     val systemDark = isSystemInDarkTheme()
     var isDarkTheme by rememberSaveable { mutableStateOf(systemDark) }
@@ -162,7 +167,7 @@ fun ExpenseTrackerApp(
                     containerColor = appColors.surface,
                     tonalElevation = 0.dp
                 ) {
-                    val navItems = listOf(Screen.Overview, Screen.Transactions, Screen.Analytics, Screen.Management, Screen.TestData)
+                    val navItems = listOf(Screen.Overview, Screen.Transactions, Screen.SettleUp, Screen.Analytics, Screen.Management, Screen.TestData)
                     navItems.forEach { screen ->
                         val selected = currentScreen == screen
                         NavigationBarItem(
@@ -180,6 +185,7 @@ fun ExpenseTrackerApp(
                                     text = when (screen) {
                                         Screen.Overview -> "Home"
                                         Screen.Transactions -> "Transactions"
+                                        Screen.SettleUp -> "Settle Up"
                                         Screen.Analytics -> "Analytics"
                                         Screen.Management -> "Manage"
                                         Screen.TestData -> "Test Data"
@@ -252,6 +258,21 @@ fun ExpenseTrackerApp(
                                 managementInitialTab = 3
                                 currentScreen = Screen.Management
                             }
+                        )
+                    }
+                    Screen.SettleUp -> {
+                        SettleUpScreen(
+                            expenseSplits = expenseSplits,
+                            splitGroups = splitGroups,
+                            transactions = transactions,
+                            repayments = repayments,
+                            onRecordRepayment = { groupId, memberId, amountPaise, date, linkedTxId, note ->
+                                viewModel.recordRepayment(groupId, memberId, amountPaise, date, linkedTxId, note)
+                            },
+                            onUndoRepayment = { repaymentId ->
+                                viewModel.deleteRepayment(repaymentId)
+                            },
+                            onNavigateToTransactions = { currentScreen = Screen.Transactions }
                         )
                     }
                     Screen.Analytics -> {

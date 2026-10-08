@@ -36,6 +36,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val paymentTemplateRepository = com.example.expensetracker.data.repository.PaymentTemplateRepository(paymentTemplateDao)
     private val splitGroupDao = db.splitGroupDao()
     private val expenseSplitDao = db.expenseSplitDao()
+    private val repaymentDao = db.repaymentDao()
 
     val splitGroupsState: StateFlow<List<com.example.expensetracker.data.local.SplitGroupWithMembers>> = splitGroupDao.getAllGroupsWithMembers()
         .stateIn(
@@ -45,6 +46,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         )
 
     val expenseSplitsState: StateFlow<List<com.example.expensetracker.data.local.ExpenseSplitWithShares>> = expenseSplitDao.getAllSplitsWithShares()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val repaymentsState: StateFlow<List<com.example.expensetracker.data.local.RepaymentWithAllocations>> = repaymentDao.getAllRepaymentsWithAllocations()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -367,6 +375,45 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun deleteExpenseSplit(splitId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             expenseSplitDao.deleteSplitById(splitId)
+        }
+    }
+
+    fun recordRepayment(
+        groupId: String,
+        memberId: String,
+        amountPaise: Long,
+        paymentDate: String,
+        linkedTransactionId: String? = null,
+        note: String? = null
+    ): com.example.expensetracker.model.RepaymentRecordResult = runBlocking(Dispatchers.IO) {
+        val splits = expenseSplitDao.getAllSplitsWithSharesSync()
+        val groups = splitGroupDao.getAllGroupsWithMembersSync()
+        val transactions = transactionDao.getAllTransactionsSync()
+        val repayments = repaymentDao.getAllRepaymentsWithAllocationsSync()
+
+        val result = com.example.expensetracker.model.ExpenseSplitCalculator.calculateRepaymentAllocation(
+            groupId = groupId,
+            memberId = memberId,
+            repaymentAmountPaise = amountPaise,
+            paymentDate = paymentDate,
+            linkedTransactionId = linkedTransactionId,
+            note = note,
+            splitsWithShares = splits,
+            groupsWithMembers = groups,
+            transactions = transactions,
+            repaymentsWithAllocations = repayments
+        )
+
+        if (result is com.example.expensetracker.model.RepaymentRecordResult.Success) {
+            repaymentDao.saveRepaymentWithAllocations(result.repayment, result.allocations)
+        }
+
+        return@runBlocking result
+    }
+
+    fun deleteRepayment(repaymentId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repaymentDao.deleteRepaymentById(repaymentId)
         }
     }
 }
