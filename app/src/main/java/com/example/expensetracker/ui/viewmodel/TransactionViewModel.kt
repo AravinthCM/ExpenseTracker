@@ -69,6 +69,20 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         initialValue = emptyList()
     )
 
+    private val _selectedAccountId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val selectedAccountIdState: StateFlow<String?> = _selectedAccountId
+
+    private val _isBalanceVisible = kotlinx.coroutines.flow.MutableStateFlow<Boolean>(true)
+    val isBalanceVisibleState: StateFlow<Boolean> = _isBalanceVisible
+
+    fun selectAccount(accountId: String?) {
+        _selectedAccountId.value = accountId
+    }
+
+    fun toggleBalanceVisibility() {
+        _isBalanceVisible.value = !_isBalanceVisible.value
+    }
+
     val splitGroupsState: StateFlow<List<com.example.expensetracker.data.local.SplitGroupWithMembers>> = splitGroupDao.getAllGroupsWithMembers()
         .stateIn(
             scope = viewModelScope,

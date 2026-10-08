@@ -27,7 +27,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.expensetracker.data.local.AccountEntity
 import com.example.expensetracker.data.local.CategoryEntity
+import com.example.expensetracker.data.local.toEntity
+import com.example.expensetracker.model.AccountBalanceCalculator
 import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.model.TransactionType
 import com.example.expensetracker.ui.components.BalanceCard
@@ -43,6 +46,11 @@ import com.example.expensetracker.ui.theme.RadiusMd
 fun DashboardScreen(
     transactions: List<Transaction>,
     categories: List<CategoryEntity> = emptyList(),
+    accounts: List<AccountEntity> = emptyList(),
+    selectedAccountId: String? = null,
+    isBalanceVisible: Boolean = true,
+    onSelectAccount: (String?) -> Unit = {},
+    onToggleBalanceVisibility: () -> Unit = {},
     onAddTransactionClick: () -> Unit,
     onAnalyticsClick: () -> Unit = {},
     onTransactionsClick: () -> Unit = {},
@@ -53,19 +61,53 @@ fun DashboardScreen(
     val appColors = LocalAppColors.current
     var viewingDetailsTransaction by remember { mutableStateOf<Transaction?>(null) }
 
-    // Balance Calculations
-    val totalIncome = transactions
+    val activeAccounts = remember(accounts) { accounts.filter { !it.isArchived } }
+    val validSelectedAccountId = remember(selectedAccountId, activeAccounts) {
+        selectedAccountId?.takeIf { id -> activeAccounts.any { it.id == id } }
+    }
+
+    // Filter transactions according to selected account
+    val filteredTransactions = remember(transactions, validSelectedAccountId) {
+        if (validSelectedAccountId == null) {
+            transactions
+        } else {
+            transactions.filter { it.accountId == validSelectedAccountId }
+        }
+    }
+
+    // Income and Expense calculations
+    val totalIncome = filteredTransactions
         .filter { it.type == TransactionType.INCOME }
         .sumOf { it.amount }
 
-    val totalExpenses = transactions
+    val totalExpenses = filteredTransactions
         .filter { it.type == TransactionType.EXPENSE }
         .sumOf { it.amount }
 
-    val totalBalance = totalIncome - totalExpenses
+    // Derive Account Balance from integer paise calculator
+    val totalBalance = remember(accounts, transactions, validSelectedAccountId, totalIncome, totalExpenses) {
+        if (validSelectedAccountId == null) {
+            val activeAccountsPaise = AccountBalanceCalculator.calculateTotalActiveBalancePaise(
+                activeAccounts,
+                transactions.map { it.toEntity() }
+            )
+            activeAccountsPaise / 100.0
+        } else {
+            val selectedAcc = activeAccounts.find { it.id == validSelectedAccountId }
+            if (selectedAcc != null) {
+                val balancePaise = AccountBalanceCalculator.calculateAccountBalancePaise(
+                    selectedAcc,
+                    transactions.map { it.toEntity() }
+                )
+                balancePaise / 100.0
+            } else {
+                totalIncome - totalExpenses
+            }
+        }
+    }
 
-    // Donut Category Breakdown (Top spending categories)
-    val expenseTransactions = transactions.filter { it.type == TransactionType.EXPENSE }
+    // Donut Category Breakdown (Top spending categories in filtered set)
+    val expenseTransactions = filteredTransactions.filter { it.type == TransactionType.EXPENSE }
     val totalExpenseSum = expenseTransactions.sumOf { it.amount }
 
     val categorySpendingMap = expenseTransactions
@@ -91,12 +133,18 @@ fun DashboardScreen(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 1. Hero Card (Total balance + Split Income/Expenses)
+        // 1. Hero Card (Account Balance + Income/Expenses)
         item {
             BalanceCard(
+                accounts = accounts,
+                selectedAccountId = validSelectedAccountId,
+                isBalanceVisible = isBalanceVisible,
                 totalBalance = totalBalance,
                 totalIncome = totalIncome,
-                totalExpenses = totalExpenses
+                totalExpenses = totalExpenses,
+                onSelectAccount = onSelectAccount,
+                onToggleBalanceVisibility = onToggleBalanceVisibility,
+                onManageAccountsClick = onManagementClick
             )
         }
 
@@ -161,7 +209,7 @@ fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Recent transactions",
+                    text = if (validSelectedAccountId == null) "Recent transactions" else "Recent account transactions",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp
@@ -185,11 +233,11 @@ fun DashboardScreen(
         }
 
         // 4. Recent Transactions List (Top 5)
-        val recentList = transactions.sortedByDescending { it.timestamp }.take(5)
+        val recentList = filteredTransactions.sortedByDescending { it.timestamp }.take(5)
         if (recentList.isEmpty()) {
             item {
                 Text(
-                    text = "No recent transactions.",
+                    text = "No recent transactions for this selection.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = appColors.inkFaint,
                     modifier = Modifier.padding(vertical = 12.dp, horizontal = 2.dp)
@@ -200,8 +248,10 @@ fun DashboardScreen(
                 items = recentList,
                 key = { it.id }
             ) { transaction ->
+                val accountName = accounts.find { it.id == transaction.accountId }?.name
                 TransactionItem(
                     transaction = transaction,
+                    accountName = accountName,
                     onCardClick = { viewingDetailsTransaction = transaction },
                     onEditClick = { onEditTransaction(transaction) },
                     onDeleteClick = { onDeleteTransaction(transaction) }

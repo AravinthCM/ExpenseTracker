@@ -117,6 +117,8 @@ fun ExpenseTrackerApp(
     val accounts by viewModel.accountsState.collectAsState()
     val primaryAccount by viewModel.primaryAccountState.collectAsState()
     val accountsWithBalances by viewModel.accountsWithBalancesState.collectAsState()
+    val selectedAccountId by viewModel.selectedAccountIdState.collectAsState()
+    val isBalanceVisible by viewModel.isBalanceVisibleState.collectAsState()
 
     val unassignedTransactionCount = remember(transactions) {
         transactions.count { it.accountId == null }
@@ -242,6 +244,11 @@ fun ExpenseTrackerApp(
                         DashboardScreen(
                             transactions = transactions,
                             categories = categories,
+                            accounts = accounts,
+                            selectedAccountId = selectedAccountId,
+                            isBalanceVisible = isBalanceVisible,
+                            onSelectAccount = { accId -> viewModel.selectAccount(accId) },
+                            onToggleBalanceVisibility = { viewModel.toggleBalanceVisibility() },
                             onAddTransactionClick = { showAddSheet = true },
                             onAnalyticsClick = { currentScreen = Screen.Analytics },
                             onTransactionsClick = { currentScreen = Screen.Transactions },
@@ -286,6 +293,9 @@ fun ExpenseTrackerApp(
                         AnalyticsScreen(
                             transactions = transactions,
                             categories = categories,
+                            accounts = accounts,
+                            selectedAccountId = selectedAccountId,
+                            onSelectAccount = { accId -> viewModel.selectAccount(accId) },
                             recurringEntities = recurringExpenses,
                             onNavigateBack = { currentScreen = Screen.Overview },
                             onConfirmCandidate = { candidate -> viewModel.confirmRecurringCandidate(candidate) },

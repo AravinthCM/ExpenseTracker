@@ -1,5 +1,6 @@
 package com.example.expensetracker.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,38 +45,38 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.BorderStroke
-import com.example.expensetracker.ui.theme.BorderSubtle
-import com.example.expensetracker.ui.theme.LocalAppColors
+import com.example.expensetracker.data.local.AccountEntity
 import com.example.expensetracker.data.local.CategoryEntity
+import com.example.expensetracker.data.local.RecurringExpenseEntity
 import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.model.TransactionType
+import com.example.expensetracker.service.DetectedRecurringCandidate
 import com.example.expensetracker.ui.components.CategoryDonutChart
 import com.example.expensetracker.ui.components.CategoryDrillDownDialog
 import com.example.expensetracker.ui.components.CategorySpendingItem
 import com.example.expensetracker.ui.components.DateRangePickerDialog
 import com.example.expensetracker.ui.components.IncomeExpenseBar
+import com.example.expensetracker.ui.components.RecurringSection
 import com.example.expensetracker.ui.components.SpendingTrendChart
 import com.example.expensetracker.ui.components.TrendPoint
+import com.example.expensetracker.ui.theme.LocalAppColors
 import com.example.expensetracker.ui.util.CurrencyFormatter
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-import com.example.expensetracker.data.local.RecurringExpenseEntity
-import com.example.expensetracker.service.DetectedRecurringCandidate
-import com.example.expensetracker.ui.components.RecurringSection
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnalyticsScreen(
     transactions: List<Transaction>,
     categories: List<CategoryEntity> = emptyList(),
+    accounts: List<AccountEntity> = emptyList(),
+    selectedAccountId: String? = null,
     recurringEntities: List<RecurringExpenseEntity> = emptyList(),
+    onSelectAccount: (String?) -> Unit = {},
     onNavigateBack: () -> Unit,
     onConfirmCandidate: (DetectedRecurringCandidate) -> Unit = {},
     onDismissCandidate: (DetectedRecurringCandidate) -> Unit = {},
@@ -90,8 +91,18 @@ fun AnalyticsScreen(
     var selectedDrillDownCategory by remember { mutableStateOf<String?>(null) }
 
     val periodOptions = listOf("This week", "This month", "Last month", "This year", "Custom")
+    val activeAccounts = remember(accounts) { accounts.filter { !it.isArchived } }
 
-    // Filter transactions by selected period
+    val validSelectedAccountId = remember(selectedAccountId, activeAccounts) {
+        selectedAccountId?.takeIf { id -> activeAccounts.any { it.id == id } }
+    }
+
+    val selectedAccountName = remember(validSelectedAccountId, activeAccounts) {
+        if (validSelectedAccountId == null) "All Accounts"
+        else activeAccounts.find { it.id == validSelectedAccountId }?.name ?: "All Accounts"
+    }
+
+    // 1. Filter transactions by selected period
     val periodFilteredTransactions = remember(
         transactions,
         selectedPeriod,
@@ -103,10 +114,22 @@ fun AnalyticsScreen(
         }
     }
 
+    // 2. Filter transactions by selected account
+    val accountAndPeriodFilteredTransactions = remember(
+        periodFilteredTransactions,
+        validSelectedAccountId
+    ) {
+        if (validSelectedAccountId == null) {
+            periodFilteredTransactions
+        } else {
+            periodFilteredTransactions.filter { it.accountId == validSelectedAccountId }
+        }
+    }
+
     // Calculations excluding transfers
-    val incomeTransactions = periodFilteredTransactions.filter { it.type == TransactionType.INCOME }
-    val expenseTransactions = periodFilteredTransactions.filter { it.type == TransactionType.EXPENSE }
-    val transferTransactions = periodFilteredTransactions.filter { it.type == TransactionType.TRANSFER }
+    val incomeTransactions = accountAndPeriodFilteredTransactions.filter { it.type == TransactionType.INCOME }
+    val expenseTransactions = accountAndPeriodFilteredTransactions.filter { it.type == TransactionType.EXPENSE }
+    val transferTransactions = accountAndPeriodFilteredTransactions.filter { it.type == TransactionType.TRANSFER }
 
     val totalIncome = incomeTransactions.sumOf { it.amount }
     val totalExpenses = expenseTransactions.sumOf { it.amount }
@@ -184,29 +207,60 @@ fun AnalyticsScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. Period Selector Row
+            // 1. Account & Period Selector Row
+            if (activeAccounts.isNotEmpty()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Account filter:", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.inkFaint)
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            item {
+                                FilterChip(
+                                    selected = validSelectedAccountId == null,
+                                    onClick = { onSelectAccount(null) },
+                                    label = { Text("All Accounts") }
+                                )
+                            }
+                            items(activeAccounts) { acc ->
+                                FilterChip(
+                                    selected = validSelectedAccountId == acc.id,
+                                    onClick = { onSelectAccount(acc.id) },
+                                    label = { Text(acc.name) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Period Selector Row
             item {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(periodOptions) { option ->
-                        FilterChip(
-                            selected = selectedPeriod == option,
-                            onClick = {
-                                selectedPeriod = option
-                                if (option == "Custom") {
-                                    showCustomDateDialog = true
-                                }
-                            },
-                            label = { Text(option) }
-                        )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Time period:", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = LocalAppColors.current.inkFaint)
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(periodOptions) { option ->
+                            FilterChip(
+                                selected = selectedPeriod == option,
+                                onClick = {
+                                    selectedPeriod = option
+                                    if (option == "Custom") {
+                                        showCustomDateDialog = true
+                                    }
+                                },
+                                label = { Text(option) }
+                            )
+                        }
                     }
                 }
             }
 
             // Empty State Check
-            if (periodFilteredTransactions.isEmpty()) {
+            if (accountAndPeriodFilteredTransactions.isEmpty()) {
                 item {
                     Card(
                         modifier = Modifier
@@ -249,7 +303,7 @@ fun AnalyticsScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "There are no transactions for this period.",
+                                text = "There are no transactions for $selectedAccountName in $selectedPeriod.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -258,7 +312,7 @@ fun AnalyticsScreen(
                     }
                 }
             } else {
-                // 2. Summary Cards (Income, Expenses, Net & Transfers)
+                // 3. Summary Cards (Income, Expenses, Net & Transfers)
                 item {
                     val appColors = LocalAppColors.current
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -300,7 +354,7 @@ fun AnalyticsScreen(
                     }
                 }
 
-                // 3. Income vs Expense Comparison Bar
+                // 4. Income vs Expense Comparison Bar
                 item {
                     IncomeExpenseBar(
                         incomeAmount = totalIncome,
@@ -308,7 +362,7 @@ fun AnalyticsScreen(
                     )
                 }
 
-                // 4. Spending by Category (Chart + Breakdown List)
+                // 5. Spending by Category (Chart + Breakdown List)
                 if (totalExpenses > 0 && categorySpendingList.isNotEmpty()) {
                     item {
                         val appColors = LocalAppColors.current
@@ -323,7 +377,7 @@ fun AnalyticsScreen(
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
-                                    text = "Spending by Category",
+                                    text = "Spending by Category ($selectedAccountName)",
                                     style = MaterialTheme.typography.titleMedium.copy(
                                         fontWeight = FontWeight.Bold
                                     ),
@@ -341,7 +395,7 @@ fun AnalyticsScreen(
                     }
                 }
 
-                // 5. Spending Trend Chart
+                // 6. Spending Trend Chart
                 if (trendPoints.isNotEmpty()) {
                     item {
                         SpendingTrendChart(trendPoints = trendPoints)
@@ -349,10 +403,10 @@ fun AnalyticsScreen(
                 }
             }
 
-            // 6. Automatic Recurring Expenses & Subscriptions Section
+            // 7. Automatic Recurring Expenses & Subscriptions Section
             item {
                 RecurringSection(
-                    transactions = transactions,
+                    transactions = accountAndPeriodFilteredTransactions,
                     recurringEntities = recurringEntities,
                     onConfirmCandidate = onConfirmCandidate,
                     onDismissCandidate = onDismissCandidate
@@ -379,14 +433,14 @@ fun AnalyticsScreen(
 
     // Category Drill-Down Dialog
     selectedDrillDownCategory?.let { catName ->
-        val matchingTx = periodFilteredTransactions.filter {
+        val matchingTx = accountAndPeriodFilteredTransactions.filter {
             it.type == TransactionType.EXPENSE &&
             it.category.name.equals(catName, ignoreCase = true)
         }
 
         CategoryDrillDownDialog(
             categoryName = catName,
-            periodTitle = selectedPeriod,
+            periodTitle = "$selectedPeriod ($selectedAccountName)",
             transactions = matchingTx,
             onDismiss = { selectedDrillDownCategory = null },
             onEditTransaction = onEditTransaction,
