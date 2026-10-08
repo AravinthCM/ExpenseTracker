@@ -37,6 +37,37 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val splitGroupDao = db.splitGroupDao()
     private val expenseSplitDao = db.expenseSplitDao()
     private val repaymentDao = db.repaymentDao()
+    private val accountDao = db.accountDao()
+
+    val accountsState: StateFlow<List<com.example.expensetracker.data.local.AccountEntity>> = accountDao.getAllAccounts()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val primaryAccountState: StateFlow<com.example.expensetracker.data.local.AccountEntity?> = accountDao.getPrimaryAccountFlow()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = null
+        )
+
+    val accountsWithBalancesState: StateFlow<List<com.example.expensetracker.model.AccountWithBalance>> = kotlinx.coroutines.flow.combine(
+        accountsState,
+        transactionDao.getAllTransactions()
+    ) { accounts, txEntities ->
+        accounts.map { account ->
+            com.example.expensetracker.model.AccountWithBalance(
+                account = account,
+                currentBalancePaise = com.example.expensetracker.model.AccountBalanceCalculator.calculateAccountBalancePaise(account, txEntities)
+            )
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
 
     val splitGroupsState: StateFlow<List<com.example.expensetracker.data.local.SplitGroupWithMembers>> = splitGroupDao.getAllGroupsWithMembers()
         .stateIn(
@@ -109,26 +140,111 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    // --- Account Operations ---
+    fun saveAccount(
+        id: String?,
+        name: String,
+        openingBalancePaise: Long,
+        isPrimary: Boolean
+    ): String? = runBlocking(Dispatchers.IO) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return@runBlocking "Account name cannot be empty."
+
+        val existingAccounts = accountDao.getAllAccountsSync()
+        val duplicate = existingAccounts.find {
+            it.name.equals(trimmed, ignoreCase = true) && (id == null || it.id != id)
+        }
+        if (duplicate != null) {
+            return@runBlocking "Account name '$trimmed' already exists."
+        }
+
+        val targetId = if (!id.isNullOrBlank()) id else UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val existingAccount = if (!id.isNullOrBlank()) accountDao.getAccountByIdSync(id) else null
+
+        val accountEntity = com.example.expensetracker.data.local.AccountEntity(
+            id = targetId,
+            name = trimmed,
+            openingBalancePaise = openingBalancePaise,
+            isPrimary = isPrimary,
+            isArchived = existingAccount?.isArchived ?: false,
+            createdAt = existingAccount?.createdAt ?: now,
+            updatedAt = now
+        )
+
+        if (existingAccount == null) {
+            accountDao.insertAccount(accountEntity)
+        } else {
+            accountDao.updateAccount(accountEntity)
+        }
+        if (isPrimary) {
+            accountDao.setPrimaryAccount(targetId)
+        } else if (existingAccounts.isEmpty() || existingAccounts.size == 1 && existingAccounts[0].id == targetId) {
+            // If this is the only account, default it to primary
+            accountDao.setPrimaryAccount(targetId)
+        }
+        return@runBlocking null
+    }
+
+    fun setPrimaryAccount(accountId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            accountDao.setPrimaryAccount(accountId)
+        }
+    }
+
+    fun setAccountArchived(accountId: String, isArchived: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            accountDao.setArchivedStatus(accountId, isArchived)
+        }
+    }
+
+    fun deleteAccount(account: com.example.expensetracker.data.local.AccountEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Reassign transactions to null (unassigned) before deleting account to preserve history
+            transactionDao.reassignTransactions(account.id, null)
+            accountDao.deleteAccountById(account.id)
+        }
+    }
+
+    fun assignUnassignedTransactionsToAccount(accountId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            transactionDao.assignUnassignedTransactionsToAccount(accountId)
+        }
+    }
+
+    fun reassignTransactions(fromAccountId: String, toAccountId: String?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            transactionDao.reassignTransactions(fromAccountId, toAccountId)
+        }
+    }
+
     // --- Transaction Operations ---
     fun addTransaction(transaction: Transaction) {
         viewModelScope.launch(Dispatchers.IO) {
-            transactionDao.insertTransaction(transaction.toEntity())
+            val primary = accountDao.getPrimaryAccountSync()
+            val finalAccountId = transaction.accountId ?: primary?.id
+            val finalTx = if (transaction.accountId == null && finalAccountId != null) {
+                transaction.copy(accountId = finalAccountId)
+            } else {
+                transaction
+            }
+            transactionDao.insertTransaction(finalTx.toEntity())
 
             // Trigger success notification ONLY after Room insert succeeds
             TransactionNotificationHelper.showTransactionAddedNotification(
                 context = getApplication(),
-                type = transaction.type,
-                amount = transaction.amount,
-                name = transaction.title,
-                source = transaction.source.name
+                type = finalTx.type,
+                amount = finalTx.amount,
+                name = finalTx.title,
+                source = finalTx.source.name
             )
 
             // Update matching confirmed recurring expense if present
             val confirmedList = recurringExpenseDao.getAllRecurringExpensesSync().filter { it.active && !it.dismissed }
-            val matched = RecurringExpenseDetector.findMatchingConfirmedRecurring(transaction, confirmedList)
+            val matched = RecurringExpenseDetector.findMatchingConfirmedRecurring(finalTx, confirmedList)
             if (matched != null) {
                 recurringExpenseDao.updateRecurringExpense(
-                    matched.copy(lastTransactionTimestamp = transaction.timestamp)
+                    matched.copy(lastTransactionTimestamp = finalTx.timestamp)
                 )
             }
         }

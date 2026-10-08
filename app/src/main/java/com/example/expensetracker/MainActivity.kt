@@ -114,6 +114,13 @@ fun ExpenseTrackerApp(
     val splitGroups by viewModel.splitGroupsState.collectAsState()
     val expenseSplits by viewModel.expenseSplitsState.collectAsState()
     val repayments by viewModel.repaymentsState.collectAsState()
+    val accounts by viewModel.accountsState.collectAsState()
+    val primaryAccount by viewModel.primaryAccountState.collectAsState()
+    val accountsWithBalances by viewModel.accountsWithBalancesState.collectAsState()
+
+    val unassignedTransactionCount = remember(transactions) {
+        transactions.count { it.accountId == null }
+    }
 
     val systemDark = isSystemInDarkTheme()
     var isDarkTheme by rememberSaveable { mutableStateOf(systemDark) }
@@ -293,6 +300,8 @@ fun ExpenseTrackerApp(
                             mappings = categoryMappings,
                             paymentTemplates = paymentTemplates,
                             splitGroups = splitGroups,
+                            accountsWithBalances = accountsWithBalances,
+                            unassignedTransactionCount = unassignedTransactionCount,
                             initialSelectedTab = managementInitialTab,
                             initialSampleForTemplate = sampleForTemplate,
                             onAddCategory = { name -> viewModel.addCategory(name) },
@@ -310,6 +319,13 @@ fun ExpenseTrackerApp(
                             onDeletePaymentTemplate = { template -> viewModel.deletePaymentTemplate(template) },
                             onSaveSplitGroup = { groupId, name, members -> viewModel.saveSplitGroup(groupId, name, members) },
                             onDeleteSplitGroup = { group -> viewModel.deleteSplitGroup(group) },
+                            onSaveAccount = { id, name, openingBal, isPrimary ->
+                                viewModel.saveAccount(id, name, openingBal, isPrimary)
+                            },
+                            onSetPrimaryAccount = { accId -> viewModel.setPrimaryAccount(accId) },
+                            onSetAccountArchived = { accId, isArchived -> viewModel.setAccountArchived(accId, isArchived) },
+                            onDeleteAccount = { acc -> viewModel.deleteAccount(acc) },
+                            onAssignUnassignedTransactions = { accId -> viewModel.assignUnassignedTransactionsToAccount(accId) },
                             onNavigateBack = { currentScreen = Screen.Overview }
                         )
                     }
@@ -335,6 +351,8 @@ fun ExpenseTrackerApp(
             com.example.expensetracker.ui.components.AddOrEditTransactionBottomSheet(
                 initialTransaction = null,
                 availableCategories = categories.map { it.name },
+                accounts = accounts.filter { !it.isArchived },
+                defaultAccountId = primaryAccount?.id,
                 onDismiss = { showAddSheet = false },
                 onSave = { newTx ->
                     viewModel.addTransaction(newTx)
@@ -348,6 +366,8 @@ fun ExpenseTrackerApp(
             com.example.expensetracker.ui.components.AddOrEditTransactionBottomSheet(
                 initialTransaction = transaction,
                 availableCategories = categories.map { it.name },
+                accounts = accounts,
+                defaultAccountId = primaryAccount?.id,
                 onDismiss = { editingTransaction = null },
                 onSave = { updatedTx ->
                     viewModel.updateTransaction(updatedTx)

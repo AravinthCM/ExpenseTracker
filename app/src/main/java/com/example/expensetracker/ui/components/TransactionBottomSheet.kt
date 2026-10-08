@@ -65,6 +65,8 @@ import java.util.UUID
 fun AddOrEditTransactionBottomSheet(
     initialTransaction: Transaction? = null,
     availableCategories: List<String> = emptyList(),
+    accounts: List<com.example.expensetracker.data.local.AccountEntity> = emptyList(),
+    defaultAccountId: String? = null,
     onDismiss: () -> Unit,
     onSave: (Transaction) -> Unit
 ) {
@@ -75,6 +77,12 @@ fun AddOrEditTransactionBottomSheet(
     var amountText by remember { mutableStateOf(initialTransaction?.amount?.let { if (it > 0) it.toString() else "" } ?: "") }
     var titleText by remember { mutableStateOf(initialTransaction?.title ?: "") }
     var selectedCategory by remember { mutableStateOf(initialTransaction?.category ?: TransactionCategory.FOOD) }
+    var selectedAccountId by remember {
+        mutableStateOf(
+            if (initialTransaction != null) initialTransaction.accountId else (defaultAccountId ?: accounts.find { it.isPrimary }?.id)
+        )
+    }
+    var accountDropdownExpanded by remember { mutableStateOf(false) }
     var dateText by remember {
         mutableStateOf(
             initialTransaction?.date ?: SimpleDateFormat("E, dd MMM yyyy", Locale.getDefault()).format(Date())
@@ -310,7 +318,66 @@ fun AddOrEditTransactionBottomSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 4. Date Field
+            // 4. Account Field (if accounts available)
+            if (accounts.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "Account",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
+                    color = appColors.inkMuted
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val selectedAccName = accounts.find { it.id == selectedAccountId }?.let {
+                    if (it.isPrimary) "${it.name} (Primary)" else it.name
+                } ?: "None (Unassigned)"
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(appColors.bg, RoundedCornerShape(11.dp))
+                        .border(1.dp, appColors.border, RoundedCornerShape(11.dp))
+                        .clickable { accountDropdownExpanded = true }
+                        .padding(horizontal = 13.dp, vertical = 11.dp)
+                ) {
+                    Text(
+                        text = selectedAccName,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = appColors.ink
+                        )
+                    )
+
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = accountDropdownExpanded,
+                        onDismissRequest = { accountDropdownExpanded = false }
+                    ) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("None (Unassigned)") },
+                            onClick = {
+                                selectedAccountId = null
+                                accountDropdownExpanded = false
+                            }
+                        )
+                        accounts.forEach { acc ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = {
+                                    Text(if (acc.isPrimary) "${acc.name} (Primary)" else acc.name)
+                                },
+                                onClick = {
+                                    selectedAccountId = acc.id
+                                    accountDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 5. Date Field
             Text(
                 text = "Date",
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
@@ -361,7 +428,8 @@ fun AddOrEditTransactionBottomSheet(
                             amount = parsedAmount,
                             type = type,
                             category = selectedCategory,
-                            date = dateText
+                            date = dateText,
+                            accountId = selectedAccountId
                         ) ?: Transaction(
                             id = UUID.randomUUID().toString(),
                             title = trimmedTitle,
@@ -369,7 +437,8 @@ fun AddOrEditTransactionBottomSheet(
                             type = type,
                             category = selectedCategory,
                             date = dateText,
-                            source = TransactionSource.MANUAL
+                            source = TransactionSource.MANUAL,
+                            accountId = selectedAccountId
                         )
                         onSave(savedTx)
                     }

@@ -1,13 +1,17 @@
 package com.example.expensetracker.data.local
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.model.TransactionCategory
 import com.example.expensetracker.model.TransactionSource
 import com.example.expensetracker.model.TransactionType
 
-@Entity(tableName = "transactions")
+@Entity(
+    tableName = "transactions",
+    indices = [Index(value = ["accountId"])]
+)
 data class TransactionEntity(
     @PrimaryKey
     val id: String,
@@ -18,7 +22,8 @@ data class TransactionEntity(
     val date: String,
     val source: String,
     val timestamp: Long,
-    val originalText: String = ""
+    val originalText: String = "",
+    val accountId: String? = null
 )
 
 fun TransactionEntity.toDomainModel(): Transaction {
@@ -49,7 +54,8 @@ fun TransactionEntity.toDomainModel(): Transaction {
         date = date,
         source = transactionSource,
         timestamp = timestamp,
-        originalText = originalText
+        originalText = originalText,
+        accountId = accountId
     )
 }
 
@@ -63,6 +69,7 @@ fun Transaction.toEntity(): TransactionEntity {
         date = date,
         source = source.name,
         timestamp = timestamp,
-        originalText = originalText
+        originalText = originalText,
+        accountId = accountId
     )
 }

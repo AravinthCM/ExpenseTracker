@@ -67,6 +67,8 @@ fun ManagementScreen(
     mappings: List<CategoryMappingEntity>,
     paymentTemplates: List<com.example.expensetracker.data.local.PaymentTemplateEntity> = emptyList(),
     splitGroups: List<com.example.expensetracker.data.local.SplitGroupWithMembers> = emptyList(),
+    accountsWithBalances: List<com.example.expensetracker.model.AccountWithBalance> = emptyList(),
+    unassignedTransactionCount: Int = 0,
     initialSelectedTab: Int = 0,
     initialSampleForTemplate: String? = null,
     onAddCategory: (String) -> Unit,
@@ -81,6 +83,11 @@ fun ManagementScreen(
     onDeletePaymentTemplate: (com.example.expensetracker.data.local.PaymentTemplateEntity) -> Unit = {},
     onSaveSplitGroup: (groupId: String?, name: String, members: List<com.example.expensetracker.model.DraftMember>) -> com.example.expensetracker.model.ValidationResult = { _, _, _ -> com.example.expensetracker.model.ValidationResult(false) },
     onDeleteSplitGroup: (com.example.expensetracker.data.local.SplitGroupEntity) -> Unit = {},
+    onSaveAccount: (id: String?, name: String, openingBalancePaise: Long, isPrimary: Boolean) -> String? = { _, _, _, _ -> null },
+    onSetPrimaryAccount: (accountId: String) -> Unit = {},
+    onSetAccountArchived: (accountId: String, isArchived: Boolean) -> Unit = { _, _ -> },
+    onDeleteAccount: (com.example.expensetracker.data.local.AccountEntity) -> Unit = {},
+    onAssignUnassignedTransactions: (accountId: String) -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     var selectedTabIndex by remember(initialSelectedTab) { mutableIntStateOf(initialSelectedTab) }
@@ -97,10 +104,25 @@ fun ManagementScreen(
     var editingTemplate by remember { mutableStateOf<com.example.expensetracker.data.local.PaymentTemplateEntity?>(null) }
     var testingTemplate by remember { mutableStateOf<com.example.expensetracker.data.local.PaymentTemplateEntity?>(null) }
 
+    // Account Dialog States
+    var showAddAccountDialog by remember { mutableStateOf(false) }
+    var editingAccount by remember { mutableStateOf<com.example.expensetracker.data.local.AccountEntity?>(null) }
+
     // Split Group States
     var isCreatingGroup by remember { mutableStateOf(false) }
     var editingGroup by remember { mutableStateOf<com.example.expensetracker.data.local.SplitGroupWithMembers?>(null) }
     var deletingGroup by remember { mutableStateOf<com.example.expensetracker.data.local.SplitGroupEntity?>(null) }
+
+    if (showAddAccountDialog || editingAccount != null) {
+        com.example.expensetracker.ui.components.AddOrEditAccountDialog(
+            initialAccount = editingAccount,
+            onDismiss = {
+                showAddAccountDialog = false
+                editingAccount = null
+            },
+            onSave = onSaveAccount
+        )
+    }
 
     if (isCreatingGroup || editingGroup != null) {
         com.example.expensetracker.ui.components.CreateOrEditSplitGroupScreen(
@@ -120,7 +142,7 @@ fun ManagementScreen(
             ) {
                 val appColors = LocalAppColors.current
 
-                // Subtab Strip with horizontal scrolling for 4 tabs
+                // Subtab Strip with horizontal scrolling for 5 tabs
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -223,6 +245,30 @@ fun ManagementScreen(
                             }
                         }
                     }
+
+                    Box(
+                        modifier = Modifier
+                            .clickable { selectedTabIndex = 4 }
+                            .padding(bottom = 8.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "Accounts (${accountsWithBalances.size})",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (selectedTabIndex == 4) appColors.ink else appColors.inkFaint
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (selectedTabIndex == 4) {
+                                Box(
+                                    modifier = Modifier
+                                        .height(2.dp)
+                                        .width(65.dp)
+                                        .background(appColors.accent, RoundedCornerShape(1.dp))
+                                )
+                            }
+                        }
+                    }
                 }
 
                 when (selectedTabIndex) {
@@ -252,6 +298,16 @@ fun ManagementScreen(
                         onAddGroupClick = { isCreatingGroup = true },
                         onEditGroupClick = { editingGroup = it },
                         onDeleteGroupClick = { deletingGroup = it }
+                    )
+                    4 -> com.example.expensetracker.ui.components.AccountsTabContent(
+                        accountsWithBalances = accountsWithBalances,
+                        unassignedCount = unassignedTransactionCount,
+                        onAddAccountClick = { showAddAccountDialog = true },
+                        onEditAccountClick = { editingAccount = it },
+                        onSetPrimaryAccountClick = onSetPrimaryAccount,
+                        onToggleArchivedClick = { acc -> onSetAccountArchived(acc.id, !acc.isArchived) },
+                        onDeleteAccountClick = onDeleteAccount,
+                        onAssignUnassignedClick = onAssignUnassignedTransactions
                     )
                 }
             }

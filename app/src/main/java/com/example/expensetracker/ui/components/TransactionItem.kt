@@ -58,6 +58,7 @@ fun TransactionItem(
     onEditClick: () -> Unit = {},
     onDeleteClick: () -> Unit = {},
     splitCount: Int = 0,
+    accountName: String? = null,
     showBorder: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -124,6 +125,21 @@ fun TransactionItem(
                         ),
                         color = appColors.inkFaint
                     )
+                    if (!accountName.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .background(appColors.surfaceAlt, RoundedCornerShape(100.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = accountName,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = appColors.inkMuted
+                            )
+                        }
+                    }
                     if (splitCount > 0) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Box(

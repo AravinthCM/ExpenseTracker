@@ -33,5 +33,6 @@ data class Transaction(
     val date: String = "Today",
     val source: TransactionSource = TransactionSource.MANUAL,
     val timestamp: Long = System.currentTimeMillis(),
-    val originalText: String = ""
+    val originalText: String = "",
+    val accountId: String? = null
 )

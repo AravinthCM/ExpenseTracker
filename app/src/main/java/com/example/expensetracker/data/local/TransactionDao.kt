@@ -38,4 +38,13 @@ interface TransactionDao {
 
     @Query("UPDATE transactions SET category = :newCategory WHERE category = :oldCategory")
     fun updateCategoryForTransactions(oldCategory: String, newCategory: String)
+
+    @Query("UPDATE transactions SET accountId = :accountId WHERE id = :transactionId")
+    fun updateAccountForTransaction(transactionId: String, accountId: String?)
+
+    @Query("UPDATE transactions SET accountId = :toAccountId WHERE accountId = :fromAccountId")
+    fun reassignTransactions(fromAccountId: String, toAccountId: String?)
+
+    @Query("UPDATE transactions SET accountId = :accountId WHERE accountId IS NULL")
+    fun assignUnassignedTransactionsToAccount(accountId: String)
 }

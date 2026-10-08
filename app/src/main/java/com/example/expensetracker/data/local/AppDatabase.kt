@@ -22,9 +22,10 @@ import java.util.concurrent.Executors
         ExpenseSplitEntity::class,
         ExpenseSplitShareEntity::class,
         RepaymentEntity::class,
-        RepaymentAllocationEntity::class
+        RepaymentAllocationEntity::class,
+        AccountEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -38,6 +39,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun splitGroupDao(): SplitGroupDao
     abstract fun expenseSplitDao(): ExpenseSplitDao
     abstract fun repaymentDao(): RepaymentDao
+    abstract fun accountDao(): AccountDao
 
     companion object {
         @Volatile
@@ -267,6 +269,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `accounts` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `openingBalancePaise` INTEGER NOT NULL,
+                        `isPrimary` INTEGER NOT NULL DEFAULT 0,
+                        `isArchived` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_accounts_name` ON `accounts` (`name`)")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `accountId` TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_transactions_accountId` ON `transactions` (`accountId`)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -274,7 +298,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "expense_tracker_db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)

@@ -149,8 +149,14 @@ object TransactionDeduplicator {
                 """.trimIndent()
             )
 
-            // Convert and Save into Room database
-            val entityToSave = transaction.toEntity(mappedCategory)
+            // Convert and Save into Room database with primary account association if available
+            val primaryAcc = db.accountDao().getPrimaryAccountSync()
+            val rawEntity = transaction.toEntity(mappedCategory)
+            val entityToSave = if (rawEntity.accountId == null && primaryAcc != null) {
+                rawEntity.copy(accountId = primaryAcc.id)
+            } else {
+                rawEntity
+            }
             db.transactionDao().insertTransaction(entityToSave)
 
             Log.d(TAG, "ROOM_SAVE_RESULT: Saved entity ID=${entityToSave.id} Title='${entityToSave.title}' Amount=₹${entityToSave.amount} Source=${entityToSave.source}")
