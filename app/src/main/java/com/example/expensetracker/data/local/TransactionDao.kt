@@ -18,6 +18,9 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE timestamp BETWEEN :minTime AND :maxTime ORDER BY timestamp DESC")
     fun getTransactionsInWindow(minTime: Long, maxTime: Long): List<TransactionEntity>
 
+    @Query("SELECT * FROM transactions WHERE id = :id")
+    fun getTransactionByIdSync(id: String): TransactionEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertTransaction(transaction: TransactionEntity)
 

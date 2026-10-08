@@ -18,9 +18,11 @@ import java.util.concurrent.Executors
         TestNotificationEntity::class,
         PaymentTemplateEntity::class,
         SplitGroupEntity::class,
-        SplitGroupMemberEntity::class
+        SplitGroupMemberEntity::class,
+        ExpenseSplitEntity::class,
+        ExpenseSplitShareEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun testNotificationDao(): TestNotificationDao
     abstract fun paymentTemplateDao(): PaymentTemplateDao
     abstract fun splitGroupDao(): SplitGroupDao
+    abstract fun expenseSplitDao(): ExpenseSplitDao
 
     companion object {
         @Volatile
@@ -177,6 +180,47 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `expense_splits` (
+                        `id` TEXT NOT NULL,
+                        `transactionId` TEXT NOT NULL,
+                        `groupId` TEXT NOT NULL,
+                        `amountPaise` INTEGER NOT NULL,
+                        `payerMemberId` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`groupId`) REFERENCES `split_groups`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`payerMemberId`) REFERENCES `split_group_members`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_expense_splits_transactionId_groupId` ON `expense_splits` (`transactionId`, `groupId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_expense_splits_groupId` ON `expense_splits` (`groupId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_expense_splits_payerMemberId` ON `expense_splits` (`payerMemberId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `expense_split_shares` (
+                        `id` TEXT NOT NULL,
+                        `splitId` TEXT NOT NULL,
+                        `memberId` TEXT NOT NULL,
+                        `shareAmountPaise` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`splitId`) REFERENCES `expense_splits`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`memberId`) REFERENCES `split_group_members`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_expense_split_shares_splitId` ON `expense_split_shares` (`splitId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_expense_split_shares_memberId` ON `expense_split_shares` (`memberId`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_expense_split_shares_splitId_memberId` ON `expense_split_shares` (`splitId`, `memberId`)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -184,7 +228,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "expense_tracker_db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
