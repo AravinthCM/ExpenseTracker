@@ -41,6 +41,9 @@ dependencies {
     // ViewModel Compose lifecycle integration
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
 
+    // Android 12+ SplashScreen API
+    implementation("androidx.core:core-splashscreen:1.0.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }

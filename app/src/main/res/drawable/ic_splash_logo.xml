@@ -1,0 +1,52 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+
+    <!-- Background circle for splash logo -->
+    <path
+        android:fillColor="#1B2A4A"
+        android:pathData="M96,96m-80,0a80,80 0 1,0 160,0a80,80 0 1,0 -160,0" />
+
+    <!-- Outer ring glow -->
+    <path
+        android:strokeColor="#2563EB"
+        android:strokeWidth="6"
+        android:fillColor="#00000000"
+        android:pathData="M96,96m-72,0a72,72 0 1,0 144,0a72,72 0 1,0 -144,0" />
+
+    <!-- Wallet Body -->
+    <path
+        android:fillColor="#3B82F6"
+        android:pathData="M52,68 h88 c6.6,0 12,5.4 12,12 v44 c0,6.6 -5.4,12 -12,12 H52 c-6.6,0 -12,-5.4 -12,-12 V80 c0,-6.6 5.4,-12 12,-12 z" />
+
+    <!-- Wallet Flap Accent -->
+    <path
+        android:fillColor="#1D4ED8"
+        android:pathData="M40,80 c0,-6.6 5.4,-12 12,-12 h88 v16 H52 c-6.6,0 -12,-5.4 -12,-4 z" />
+
+    <!-- Wallet Clasp / Button -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M128,94 h20 c4.4,0 8,3.6 8,8 v8 c0,4.4 -3.6,8 -8,8 h-20 c-4.4,0 -8,-3.6 -8,-8 v-8 c0,-4.4 3.6,-8 8,-8 z" />
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M136,102m-4,0a4,4 0 1,0 8,0a4,4 0 1,0 -8,0" />
+
+    <!-- Upward Trend Line / Growth Symbol inside Wallet -->
+    <path
+        android:strokeColor="#10B981"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M60,116 L76,100 L90,110 L112,88" />
+
+    <!-- Arrow head for trend line -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M104,88 H114 V98 Z" />
+
+</vector>

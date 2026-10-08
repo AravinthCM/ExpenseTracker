@@ -67,6 +67,8 @@ import com.example.expensetracker.ui.TestDataScreen
 
 import com.example.expensetracker.ui.SettleUpScreen
 
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+
 enum class Screen(val title: String, val icon: ImageVector) {
     Overview("Overview", Icons.Default.Home),
     Transactions("Transactions", Icons.Default.List),
@@ -80,6 +82,7 @@ enum class Screen(val title: String, val icon: ImageVector) {
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
 
         TransactionNotificationHelper.createNotificationChannel(this)
@@ -134,11 +137,17 @@ fun ExpenseTrackerApp(
     var showAddSheet by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
     var selectedDetailTransaction by remember { mutableStateOf<Transaction?>(null) }
+    var showSplash by rememberSaveable { mutableStateOf(true) }
 
     ExpenseTrackerTheme(darkTheme = isDarkTheme) {
         val appColors = LocalAppColors.current
 
-        Scaffold(
+        if (showSplash) {
+            com.example.expensetracker.ui.SplashScreen(
+                onSplashFinished = { showSplash = false }
+            )
+        } else {
+            Scaffold(
             topBar = {
                 TopAppBar(
                     title = {
@@ -400,6 +409,7 @@ fun ExpenseTrackerApp(
                     selectedDetailTransaction = null
                 }
             )
+        }
         }
     }
 }
