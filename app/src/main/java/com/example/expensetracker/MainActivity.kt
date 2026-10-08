@@ -107,6 +107,7 @@ fun ExpenseTrackerApp(
     val recurringExpenses by viewModel.recurringExpensesState.collectAsState()
     val testNotifications by viewModel.testNotificationsState.collectAsState()
     val paymentTemplates by viewModel.paymentTemplatesState.collectAsState()
+    val splitGroups by viewModel.splitGroupsState.collectAsState()
 
     val systemDark = isSystemInDarkTheme()
     var isDarkTheme by rememberSaveable { mutableStateOf(systemDark) }
@@ -260,6 +261,7 @@ fun ExpenseTrackerApp(
                             categories = categories,
                             mappings = categoryMappings,
                             paymentTemplates = paymentTemplates,
+                            splitGroups = splitGroups,
                             initialSelectedTab = managementInitialTab,
                             initialSampleForTemplate = sampleForTemplate,
                             onAddCategory = { name -> viewModel.addCategory(name) },
@@ -275,6 +277,8 @@ fun ExpenseTrackerApp(
                             onUpdatePaymentTemplate = { template -> viewModel.updatePaymentTemplate(template) },
                             onTogglePaymentTemplateEnabled = { template -> viewModel.togglePaymentTemplateEnabled(template) },
                             onDeletePaymentTemplate = { template -> viewModel.deletePaymentTemplate(template) },
+                            onSaveSplitGroup = { groupId, name, members -> viewModel.saveSplitGroup(groupId, name, members) },
+                            onDeleteSplitGroup = { group -> viewModel.deleteSplitGroup(group) },
                             onNavigateBack = { currentScreen = Screen.Overview }
                         )
                     }

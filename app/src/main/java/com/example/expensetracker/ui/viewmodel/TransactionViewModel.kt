@@ -33,6 +33,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val testNotificationDao = db.testNotificationDao()
     private val paymentTemplateDao = db.paymentTemplateDao()
     private val paymentTemplateRepository = com.example.expensetracker.data.repository.PaymentTemplateRepository(paymentTemplateDao)
+    private val splitGroupDao = db.splitGroupDao()
+
+    val splitGroupsState: StateFlow<List<com.example.expensetracker.data.local.SplitGroupWithMembers>> = splitGroupDao.getAllGroupsWithMembers()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     val paymentTemplatesState: StateFlow<List<com.example.expensetracker.data.local.PaymentTemplateEntity>> = paymentTemplateRepository.allTemplates
         .stateIn(
@@ -253,6 +261,51 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun deletePaymentTemplate(template: com.example.expensetracker.data.local.PaymentTemplateEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             paymentTemplateRepository.delete(template)
+        }
+    }
+
+    // --- Split Group Operations ---
+    fun saveSplitGroup(
+        groupId: String?,
+        groupName: String,
+        members: List<com.example.expensetracker.model.DraftMember>
+    ): com.example.expensetracker.model.ValidationResult {
+        val validation = com.example.expensetracker.model.SplitGroupValidator.validate(groupName, members)
+        if (!validation.isValid) {
+            return validation
+        }
+
+        val sanitizedGroupName = com.example.expensetracker.model.SplitGroupValidator.sanitizeGroupName(groupName)
+        val now = System.currentTimeMillis()
+        val targetGroupId = if (!groupId.isNullOrBlank()) groupId else UUID.randomUUID().toString()
+
+        val groupEntity = com.example.expensetracker.data.local.SplitGroupEntity(
+            id = targetGroupId,
+            name = sanitizedGroupName,
+            createdAt = now,
+            updatedAt = now
+        )
+
+        val memberEntities = members.map { draft ->
+            com.example.expensetracker.data.local.SplitGroupMemberEntity(
+                id = if (draft.id.isNotBlank()) draft.id else UUID.randomUUID().toString(),
+                groupId = targetGroupId,
+                name = com.example.expensetracker.model.SplitGroupValidator.sanitizeMemberName(draft.name),
+                isMe = draft.isMe,
+                createdAt = now
+            )
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            splitGroupDao.saveGroupWithMembers(groupEntity, memberEntities)
+        }
+
+        return validation
+    }
+
+    fun deleteSplitGroup(group: com.example.expensetracker.data.local.SplitGroupEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            splitGroupDao.deleteGroup(group)
         }
     }
 }

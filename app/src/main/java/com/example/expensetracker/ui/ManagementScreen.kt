@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,6 +66,7 @@ fun ManagementScreen(
     categories: List<CategoryEntity>,
     mappings: List<CategoryMappingEntity>,
     paymentTemplates: List<com.example.expensetracker.data.local.PaymentTemplateEntity> = emptyList(),
+    splitGroups: List<com.example.expensetracker.data.local.SplitGroupWithMembers> = emptyList(),
     initialSelectedTab: Int = 0,
     initialSampleForTemplate: String? = null,
     onAddCategory: (String) -> Unit,
@@ -76,6 +79,8 @@ fun ManagementScreen(
     onUpdatePaymentTemplate: (com.example.expensetracker.data.local.PaymentTemplateEntity) -> Unit = {},
     onTogglePaymentTemplateEnabled: (com.example.expensetracker.data.local.PaymentTemplateEntity) -> Unit = {},
     onDeletePaymentTemplate: (com.example.expensetracker.data.local.PaymentTemplateEntity) -> Unit = {},
+    onSaveSplitGroup: (groupId: String?, name: String, members: List<com.example.expensetracker.model.DraftMember>) -> com.example.expensetracker.model.ValidationResult = { _, _, _ -> com.example.expensetracker.model.ValidationResult(false) },
+    onDeleteSplitGroup: (com.example.expensetracker.data.local.SplitGroupEntity) -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     var selectedTabIndex by remember(initialSelectedTab) { mutableIntStateOf(initialSelectedTab) }
@@ -92,116 +97,163 @@ fun ManagementScreen(
     var editingTemplate by remember { mutableStateOf<com.example.expensetracker.data.local.PaymentTemplateEntity?>(null) }
     var testingTemplate by remember { mutableStateOf<com.example.expensetracker.data.local.PaymentTemplateEntity?>(null) }
 
-    Box(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        Column(
+    // Split Group States
+    var isCreatingGroup by remember { mutableStateOf(false) }
+    var editingGroup by remember { mutableStateOf<com.example.expensetracker.data.local.SplitGroupWithMembers?>(null) }
+    var deletingGroup by remember { mutableStateOf<com.example.expensetracker.data.local.SplitGroupEntity?>(null) }
+
+    if (isCreatingGroup || editingGroup != null) {
+        com.example.expensetracker.ui.components.CreateOrEditSplitGroupScreen(
+            initialGroup = editingGroup,
+            onSaveGroup = onSaveSplitGroup,
+            onCancel = {
+                isCreatingGroup = false
+                editingGroup = null
+            }
+        )
+    } else {
+        Box(
             modifier = Modifier.fillMaxSize()
         ) {
-            val appColors = LocalAppColors.current
-
-            // Subtab Strip matching HTML mockup
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            Column(
+                modifier = Modifier.fillMaxSize()
             ) {
-                Box(
+                val appColors = LocalAppColors.current
+
+                // Subtab Strip with horizontal scrolling for 4 tabs
+                Row(
                     modifier = Modifier
-                        .clickable { selectedTabIndex = 0 }
-                        .padding(bottom = 8.dp)
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column {
-                        Text(
-                            text = "Categories (${categories.size})",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (selectedTabIndex == 0) appColors.ink else appColors.inkFaint
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        if (selectedTabIndex == 0) {
-                            Box(
-                                modifier = Modifier
-                                    .height(2.dp)
-                                    .width(70.dp)
-                                    .background(appColors.accent, RoundedCornerShape(1.dp))
+                    Box(
+                        modifier = Modifier
+                            .clickable { selectedTabIndex = 0 }
+                            .padding(bottom = 8.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "Categories (${categories.size})",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (selectedTabIndex == 0) appColors.ink else appColors.inkFaint
                             )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (selectedTabIndex == 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .height(2.dp)
+                                        .width(70.dp)
+                                        .background(appColors.accent, RoundedCornerShape(1.dp))
+                                )
+                            }
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clickable { selectedTabIndex = 1 }
+                            .padding(bottom = 8.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "Regex mappings (${mappings.size})",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (selectedTabIndex == 1) appColors.ink else appColors.inkFaint
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (selectedTabIndex == 1) {
+                                Box(
+                                    modifier = Modifier
+                                        .height(2.dp)
+                                        .width(90.dp)
+                                        .background(appColors.accent, RoundedCornerShape(1.dp))
+                                )
+                            }
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clickable { selectedTabIndex = 2 }
+                            .padding(bottom = 8.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "Templates (${paymentTemplates.size})",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (selectedTabIndex == 2) appColors.ink else appColors.inkFaint
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (selectedTabIndex == 2) {
+                                Box(
+                                    modifier = Modifier
+                                        .height(2.dp)
+                                        .width(70.dp)
+                                        .background(appColors.accent, RoundedCornerShape(1.dp))
+                                )
+                            }
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clickable { selectedTabIndex = 3 }
+                            .padding(bottom = 8.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "Split groups (${splitGroups.size})",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (selectedTabIndex == 3) appColors.ink else appColors.inkFaint
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (selectedTabIndex == 3) {
+                                Box(
+                                    modifier = Modifier
+                                        .height(2.dp)
+                                        .width(75.dp)
+                                        .background(appColors.accent, RoundedCornerShape(1.dp))
+                                )
+                            }
                         }
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .clickable { selectedTabIndex = 1 }
-                        .padding(bottom = 8.dp)
-                ) {
-                    Column {
-                        Text(
-                            text = "Regex mappings (${mappings.size})",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (selectedTabIndex == 1) appColors.ink else appColors.inkFaint
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        if (selectedTabIndex == 1) {
-                            Box(
-                                modifier = Modifier
-                                    .height(2.dp)
-                                    .width(90.dp)
-                                    .background(appColors.accent, RoundedCornerShape(1.dp))
-                            )
-                        }
-                    }
+                when (selectedTabIndex) {
+                    0 -> CategoryTabContent(
+                        categories = categories,
+                        onAddCategoryClick = { showAddCategoryDialog = true },
+                        onEditCategoryClick = { editingCategory = it },
+                        onDeleteCategoryClick = { deletingCategory = it }
+                    )
+                    1 -> MappingTabContent(
+                        mappings = mappings,
+                        categories = categories,
+                        onAddMappingClick = { showAddMappingDialog = true },
+                        onEditMappingClick = { editingMapping = it },
+                        onDeleteMappingClick = onDeleteMapping
+                    )
+                    2 -> com.example.expensetracker.ui.components.PaymentTemplatesTabContent(
+                        templates = paymentTemplates,
+                        onAddTemplateClick = { showAddTemplateDialog = true },
+                        onEditTemplateClick = { editingTemplate = it },
+                        onTestTemplateClick = { testingTemplate = it },
+                        onToggleEnabledClick = onTogglePaymentTemplateEnabled,
+                        onDeleteTemplateClick = onDeletePaymentTemplate
+                    )
+                    3 -> com.example.expensetracker.ui.components.SplitGroupsTabContent(
+                        splitGroups = splitGroups,
+                        onAddGroupClick = { isCreatingGroup = true },
+                        onEditGroupClick = { editingGroup = it },
+                        onDeleteGroupClick = { deletingGroup = it }
+                    )
                 }
-
-                Box(
-                    modifier = Modifier
-                        .clickable { selectedTabIndex = 2 }
-                        .padding(bottom = 8.dp)
-                ) {
-                    Column {
-                        Text(
-                            text = "Templates (${paymentTemplates.size})",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (selectedTabIndex == 2) appColors.ink else appColors.inkFaint
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        if (selectedTabIndex == 2) {
-                            Box(
-                                modifier = Modifier
-                                    .height(2.dp)
-                                    .width(70.dp)
-                                    .background(appColors.accent, RoundedCornerShape(1.dp))
-                            )
-                        }
-                    }
-                }
-            }
-
-            when (selectedTabIndex) {
-                0 -> CategoryTabContent(
-                    categories = categories,
-                    onAddCategoryClick = { showAddCategoryDialog = true },
-                    onEditCategoryClick = { editingCategory = it },
-                    onDeleteCategoryClick = { deletingCategory = it }
-                )
-                1 -> MappingTabContent(
-                    mappings = mappings,
-                    categories = categories,
-                    onAddMappingClick = { showAddMappingDialog = true },
-                    onEditMappingClick = { editingMapping = it },
-                    onDeleteMappingClick = onDeleteMapping
-                )
-                2 -> com.example.expensetracker.ui.components.PaymentTemplatesTabContent(
-                    templates = paymentTemplates,
-                    onAddTemplateClick = { showAddTemplateDialog = true },
-                    onEditTemplateClick = { editingTemplate = it },
-                    onTestTemplateClick = { testingTemplate = it },
-                    onToggleEnabledClick = onTogglePaymentTemplateEnabled,
-                    onDeleteTemplateClick = onDeletePaymentTemplate
-                )
             }
         }
     }
@@ -321,6 +373,29 @@ fun ManagementScreen(
             onSave = { pattern, categoryName, priority ->
                 onUpdateMapping(mapping.copy(pattern = pattern, categoryName = categoryName, priority = priority))
                 editingMapping = null
+            }
+        )
+    }
+
+    deletingGroup?.let { group ->
+        AlertDialog(
+            onDismissRequest = { deletingGroup = null },
+            title = { Text("Delete Split Group?") },
+            text = { Text("Are you sure you want to delete '${group.name}'? Its members will be removed. Existing transactions will not be affected.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteSplitGroup(group)
+                        deletingGroup = null
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingGroup = null }) {
+                    Text("Cancel")
+                }
             }
         )
     }
