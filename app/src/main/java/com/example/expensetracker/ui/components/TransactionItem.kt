@@ -1,8 +1,11 @@
 package com.example.expensetracker.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,12 +49,15 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TransactionItem(
     transaction: Transaction,
     onCardClick: () -> Unit = {},
+    onLongClick: () -> Unit = {},
     onEditClick: () -> Unit = {},
     onDeleteClick: () -> Unit = {},
+    splitCount: Int = 0,
     showBorder: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -60,7 +66,10 @@ fun TransactionItem(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onCardClick() },
+            .combinedClickable(
+                onClick = { onCardClick() },
+                onLongClick = { onLongClick() }
+            ),
         shape = RadiusMd,
         colors = CardDefaults.cardColors(
             containerColor = appColors.surface
@@ -107,13 +116,39 @@ fun TransactionItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 val categoryName = transaction.category.name.lowercase().replaceFirstChar { it.uppercase() }
-                Text(
-                    text = categoryName,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp
-                    ),
-                    color = appColors.inkFaint
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = categoryName,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp
+                        ),
+                        color = appColors.inkFaint
+                    )
+                    if (splitCount > 0) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .background(appColors.accentSoft, RoundedCornerShape(100.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = null,
+                                    tint = appColors.accent,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (splitCount == 1) "Split" else "Split ($splitCount)",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = appColors.accent
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // Amount and Time

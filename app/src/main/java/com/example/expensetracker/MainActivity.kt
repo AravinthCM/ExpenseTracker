@@ -108,6 +108,7 @@ fun ExpenseTrackerApp(
     val testNotifications by viewModel.testNotificationsState.collectAsState()
     val paymentTemplates by viewModel.paymentTemplatesState.collectAsState()
     val splitGroups by viewModel.splitGroupsState.collectAsState()
+    val expenseSplits by viewModel.expenseSplitsState.collectAsState()
 
     val systemDark = isSystemInDarkTheme()
     var isDarkTheme by rememberSaveable { mutableStateOf(systemDark) }
@@ -240,8 +241,17 @@ fun ExpenseTrackerApp(
                         TransactionsScreen(
                             transactions = transactions,
                             categories = categories,
+                            splitGroups = splitGroups,
+                            expenseSplits = expenseSplits,
                             onEditTransaction = { transaction -> editingTransaction = transaction },
-                            onDeleteTransaction = { transaction -> viewModel.deleteTransaction(transaction) }
+                            onDeleteTransaction = { transaction -> viewModel.deleteTransaction(transaction) },
+                            onSaveEqualSplit = { txId, groupId -> viewModel.createEqualExpenseSplit(txId, groupId) },
+                            onSaveCustomSplit = { txId, groupId, customShares -> viewModel.createCustomExpenseSplit(txId, groupId, customShares) },
+                            onUndoSplit = { splitId -> viewModel.deleteExpenseSplit(splitId) },
+                            onNavigateToManageGroups = {
+                                managementInitialTab = 3
+                                currentScreen = Screen.Management
+                            }
                         )
                     }
                     Screen.Analytics -> {

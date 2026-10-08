@@ -11,6 +11,7 @@ import com.example.expensetracker.data.local.toEntity
 import com.example.expensetracker.model.Transaction
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -321,50 +322,46 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun createEqualExpenseSplit(
         transactionId: String,
         groupId: String
-    ): com.example.expensetracker.model.SplitCalculationResult {
+    ): com.example.expensetracker.model.SplitCalculationResult = runBlocking(Dispatchers.IO) {
         val transaction = transactionDao.getTransactionByIdSync(transactionId)
-            ?: return com.example.expensetracker.model.SplitCalculationResult.Error("Transaction not found.")
+            ?: return@runBlocking com.example.expensetracker.model.SplitCalculationResult.Error("Transaction not found.")
 
         val group = splitGroupDao.getGroupWithMembersByIdSync(groupId)
-            ?: return com.example.expensetracker.model.SplitCalculationResult.Error("Split group not found.")
+            ?: return@runBlocking com.example.expensetracker.model.SplitCalculationResult.Error("Split group not found.")
 
         val existingSplit = expenseSplitDao.getSplitForTransactionAndGroupSync(transactionId, groupId)
         if (existingSplit != null) {
-            return com.example.expensetracker.model.SplitCalculationResult.Error("Transaction has already been split with this group.")
+            return@runBlocking com.example.expensetracker.model.SplitCalculationResult.Error("Transaction has already been split with this group.")
         }
 
         val result = com.example.expensetracker.model.ExpenseSplitCalculator.calculateEqualSplit(transaction, group)
         if (result is com.example.expensetracker.model.SplitCalculationResult.Success) {
-            viewModelScope.launch(Dispatchers.IO) {
-                expenseSplitDao.saveSplitWithShares(result.split, result.shares)
-            }
+            expenseSplitDao.saveSplitWithShares(result.split, result.shares)
         }
-        return result
+        return@runBlocking result
     }
 
     fun createCustomExpenseSplit(
         transactionId: String,
         groupId: String,
         customSharesPaise: Map<String, Long>
-    ): com.example.expensetracker.model.SplitCalculationResult {
+    ): com.example.expensetracker.model.SplitCalculationResult = runBlocking(Dispatchers.IO) {
         val transaction = transactionDao.getTransactionByIdSync(transactionId)
-            ?: return com.example.expensetracker.model.SplitCalculationResult.Error("Transaction not found.")
+            ?: return@runBlocking com.example.expensetracker.model.SplitCalculationResult.Error("Transaction not found.")
 
         val group = splitGroupDao.getGroupWithMembersByIdSync(groupId)
-            ?: return com.example.expensetracker.model.SplitCalculationResult.Error("Split group not found.")
+            ?: return@runBlocking com.example.expensetracker.model.SplitCalculationResult.Error("Split group not found.")
 
         val existingSplit = expenseSplitDao.getSplitForTransactionAndGroupSync(transactionId, groupId)
         if (existingSplit != null) {
-            return com.example.expensetracker.model.SplitCalculationResult.Error("Transaction has already been split with this group.")
+            return@runBlocking com.example.expensetracker.model.SplitCalculationResult.Error("Transaction has already been split with this group.")
         }
 
         val result = com.example.expensetracker.model.ExpenseSplitCalculator.calculateCustomSplit(transaction, group, customSharesPaise)
         if (result is com.example.expensetracker.model.SplitCalculationResult.Success) {
-            viewModelScope.launch(Dispatchers.IO) {
-                expenseSplitDao.saveSplitWithShares(result.split, result.shares)
-            }
+            expenseSplitDao.saveSplitWithShares(result.split, result.shares)
         }
-        return result
+        return@runBlocking result
     }
 
     fun deleteExpenseSplit(splitId: String) {
