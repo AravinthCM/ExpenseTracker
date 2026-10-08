@@ -99,7 +99,7 @@ class SettleUpRepaymentTest {
     // 2. Partial repayment
     @Test
     fun testPartialRepayment() {
-        val group = createGroupWithMembers("Roommates", listOf("Bala"))
+        val group = createGroupWithMembers("Roommates", listOf("Bala", "Charan", "Divya"))
         val balaMember = group.members.first { it.name == "Bala" }
         val tx = createExpenseTransaction("Amman Mess", 482.0) // Bala share = 12050 paise (₹120.50)
 

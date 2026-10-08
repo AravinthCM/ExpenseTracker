@@ -24,7 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.AddCard
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
@@ -435,7 +435,7 @@ fun SettleUpScreen(
                                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Default.AddCard,
+                                                    imageVector = Icons.Default.Add,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(15.dp)
                                                 )
@@ -612,7 +612,7 @@ fun SettleUpScreen(
                                             }
                                         }
 
-                                        if (!repaymentItem.linkedTransactionTitle.isNullBrak()) {
+                                        if (!repaymentItem.linkedTransactionTitle.isNullOrBlank()) {
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
                                                 text = "Linked Transaction: ${repaymentItem.linkedTransactionTitle}",
@@ -621,7 +621,7 @@ fun SettleUpScreen(
                                             )
                                         }
 
-                                        if (!repaymentItem.note.isNullBlank()) {
+                                        if (!repaymentItem.note.isNullOrBlank()) {
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
                                                 text = "Note: ${repaymentItem.note}",
@@ -1085,5 +1085,3 @@ fun RecordRepaymentDialog(
         }
     )
 }
-
-private fun String?.isNullBrak(): Boolean = this.isNullOrBlank()
