@@ -267,6 +267,13 @@ object BackupJsonSerializer {
         writer.use { it.write(jsonString) }
     }
 
+    fun deserializeFromStream(inputStream: java.io.InputStream): ExpenseTrackerBackup {
+        val reader = java.io.InputStreamReader(inputStream, StandardCharsets.UTF_8)
+        val jsonString = reader.use { it.readText() }
+        return deserialize(jsonString)
+    }
+
+
     fun deserialize(jsonString: String): ExpenseTrackerBackup {
         if (jsonString.isBlank()) {
             throw BackupValidationException("Empty backup content provided")

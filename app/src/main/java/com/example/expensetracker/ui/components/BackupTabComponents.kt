@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.sp
 import com.example.expensetracker.data.backup.BACKUP_FORMAT_IDENTIFIER
 import com.example.expensetracker.data.backup.CURRENT_BACKUP_SCHEMA_VERSION
 import com.example.expensetracker.data.backup.BackupExportState
+import com.example.expensetracker.data.backup.BackupImportState
+import com.example.expensetracker.data.backup.ImportMode
 import com.example.expensetracker.ui.theme.BorderSubtle
 import com.example.expensetracker.ui.theme.LocalAppColors
 import java.text.SimpleDateFormat
@@ -59,9 +61,13 @@ fun BackupTabContent(
     totalSplitGroups: Int,
     totalTemplates: Int,
     backupExportState: BackupExportState,
+    backupImportState: BackupImportState = BackupImportState.Idle,
     onExportToUri: (Uri) -> Unit,
     onShareBackup: ((Intent) -> Unit) -> Unit,
-    onDismissState: () -> Unit
+    onImportFileSelected: (Uri) -> Unit = {},
+    onConfirmImport: (ImportMode) -> Unit = {},
+    onDismissState: () -> Unit = {},
+    onDismissImportState: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val appColors = LocalAppColors.current
@@ -72,6 +78,34 @@ fun BackupTabContent(
         uri?.let { onExportToUri(it) }
     }
 
+    val openDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let { onImportFileSelected(it) }
+    }
+
+    // Import Preview Dialog
+    when (backupImportState) {
+        is BackupImportState.PreviewReady -> {
+            BackupImportPreviewDialog(
+                summary = backupImportState.summary,
+                isImporting = false,
+                onDismiss = onDismissImportState,
+                onConfirmImport = onConfirmImport
+            )
+        }
+        is BackupImportState.Importing -> {
+            // In importing mode, show dialog with spinner
+            BackupImportPreviewDialog(
+                summary = (backupImportState as? BackupImportState.PreviewReady)?.summary ?: return,
+                isImporting = true,
+                onDismiss = {},
+                onConfirmImport = {}
+            )
+        }
+        else -> {}
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -79,6 +113,141 @@ fun BackupTabContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Import Status Banner (Validating / Success / Error)
+        when (backupImportState) {
+            is BackupImportState.Validating -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = appColors.accentSoft.copy(alpha = 0.25f)),
+                    border = BorderStroke(1.dp, appColors.accent)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = appColors.accent,
+                            strokeWidth = 2.5.dp
+                        )
+                        Column {
+                            Text(
+                                text = "Validating backup file...",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                color = appColors.ink
+                            )
+                            Text(
+                                text = "Checking schema, relationships, and duplicate transactions",
+                                fontSize = 12.sp,
+                                color = appColors.inkMuted
+                            )
+                        }
+                    }
+                }
+            }
+            is BackupImportState.Success -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = appColors.accentSoft.copy(alpha = 0.3f)),
+                    border = BorderStroke(1.dp, appColors.accent)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Success",
+                            tint = appColors.accent,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Import Completed",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                color = appColors.ink
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = backupImportState.message,
+                                fontSize = 12.sp,
+                                color = appColors.inkMuted
+                            )
+                            backupImportState.result.safetyBackupFile?.let { safety ->
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Pre-restore safety backup: $safety",
+                                    fontSize = 10.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = appColors.inkMuted
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = onDismissImportState,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Text("✕", fontSize = 12.sp, color = appColors.inkMuted)
+                        }
+                    }
+                }
+            }
+            is BackupImportState.Error -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = appColors.negativeSoft.copy(alpha = 0.3f)),
+                    border = BorderStroke(1.dp, appColors.negative)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Error",
+                            tint = appColors.negative,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Import Failed",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                color = appColors.negative
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = backupImportState.errorMessage,
+                                fontSize = 12.sp,
+                                color = appColors.ink
+                            )
+                        }
+                        IconButton(
+                            onClick = onDismissImportState,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Text("✕", fontSize = 12.sp, color = appColors.inkMuted)
+                        }
+                    }
+                }
+            }
+            else -> {}
+        }
+
         // Status Card (Loading / Success / Error)
         when (backupExportState) {
             is BackupExportState.Loading -> {
@@ -282,8 +451,40 @@ fun BackupTabContent(
                         fontSize = 14.sp
                     )
                 }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Import Section Divider & Button
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(BorderSubtle)
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        openDocumentLauncher.launch(arrayOf("application/json", "*/*"))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = appColors.surfaceAlt,
+                        contentColor = appColors.ink
+                    ),
+                    border = BorderStroke(1.dp, BorderSubtle)
+                ) {
+                    Text(
+                        text = "Import / Restore Backup File",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                }
             }
         }
+
 
         // Snapshot Inventory Preview Card
         Card(

@@ -1,0 +1,290 @@
+{
+  "format": "ExpenseTrackerBackup",
+  "schemaVersion": 1,
+  "exportedAt": "2026-10-18T10:30:00Z",
+  "appVersion": "1.0",
+  "databaseVersion": 12,
+  "metadata": {
+    "totalTransactions": 5,
+    "totalAccounts": 3,
+    "totalCategories": 8,
+    "totalSplitGroups": 1,
+    "totalRepayments": 1,
+    "recordCounts": {
+      "accounts": 3,
+      "categories": 8,
+      "categoryMappings": 4,
+      "transactions": 5,
+      "splitGroups": 1,
+      "splitGroupMembers": 3,
+      "expenseSplits": 1,
+      "expenseSplitShares": 3,
+      "repayments": 1,
+      "repaymentAllocations": 1,
+      "recurringExpenses": 1,
+      "paymentTemplates": 1,
+      "balanceObservations": 1,
+      "sourceAccountMappings": 1
+    }
+  },
+  "data": {
+    "accounts": [
+      {
+        "id": "acc-canara-528",
+        "name": "Canara Bank (528)",
+        "openingBalancePaise": 7500000,
+        "isPrimary": true,
+        "isArchived": false,
+        "createdAt": 1729200000000,
+        "updatedAt": 1729200000000,
+        "accountNumber": "xxxx528"
+      },
+      {
+        "id": "acc-hdfc-salary",
+        "name": "HDFC Salary",
+        "openingBalancePaise": 12000000,
+        "isPrimary": false,
+        "isArchived": false,
+        "createdAt": 1729200000000,
+        "updatedAt": 1729200000000,
+        "accountNumber": "xxxx901"
+      },
+      {
+        "id": "acc-cash-wallet",
+        "name": "Cash Wallet",
+        "openingBalancePaise": 350000,
+        "isPrimary": false,
+        "isArchived": false,
+        "createdAt": 1729200000000,
+        "updatedAt": 1729200000000,
+        "accountNumber": null
+      }
+    ],
+    "categories": [
+      { "id": "cat-food", "name": "Food" },
+      { "id": "cat-fuel", "name": "Fuel" },
+      { "id": "cat-shopping", "name": "Shopping" },
+      { "id": "cat-bills", "name": "Bills" },
+      { "id": "cat-entertainment", "name": "Entertainment" },
+      { "id": "cat-travel", "name": "Travel" },
+      { "id": "cat-salary", "name": "Salary" },
+      { "id": "cat-other", "name": "Other" }
+    ],
+    "categoryMappings": [
+      { "id": "map-swiggy", "pattern": "swiggy", "categoryName": "Food", "priority": 1 },
+      { "id": "map-zomato", "pattern": "zomato", "categoryName": "Food", "priority": 1 },
+      { "id": "map-hpcl", "pattern": "hpcl|petrol|fuel", "categoryName": "Fuel", "priority": 2 },
+      { "id": "map-amazon", "pattern": "amazon|flipkart", "categoryName": "Shopping", "priority": 3 }
+    ],
+    "transactions": [
+      {
+        "id": "tx-salary-oct",
+        "title": "Monthly Salary",
+        "amount": 85000.0,
+        "amountPaise": 8500000,
+        "type": "INCOME",
+        "category": "Salary",
+        "date": "2026-10-01",
+        "source": "BANK_NEFT",
+        "timestamp": 1727766000000,
+        "originalText": "Salary credited INR 85,000.00",
+        "accountId": "acc-hdfc-salary",
+        "referenceNumber": "NEFT202610010982"
+      },
+      {
+        "id": "tx-swiggy-arun",
+        "title": "Swiggy Dinner",
+        "amount": 480.0,
+        "amountPaise": 48000,
+        "type": "EXPENSE",
+        "category": "Food",
+        "date": "2026-10-12",
+        "source": "UPI",
+        "timestamp": 1728734400000,
+        "originalText": "Paid INR 480.00 to Swiggy",
+        "accountId": "acc-canara-528",
+        "referenceNumber": "UPI628500182613"
+      },
+      {
+        "id": "tx-shell-petrol",
+        "title": "Shell Petrol Bunk",
+        "amount": 500.0,
+        "amountPaise": 50000,
+        "type": "EXPENSE",
+        "category": "Fuel",
+        "date": "2026-10-15",
+        "source": "UPI",
+        "timestamp": 1728986400000,
+        "originalText": "Debited INR 500.00 at Shell",
+        "accountId": "acc-canara-528",
+        "referenceNumber": "UPI719400291033"
+      },
+      {
+        "id": "tx-atm-cash",
+        "title": "ATM Cash Withdrawal",
+        "amount": 2000.0,
+        "amountPaise": 200000,
+        "type": "TRANSFER",
+        "category": "Other",
+        "date": "2026-10-16",
+        "source": "ATM",
+        "timestamp": 1729065600000,
+        "originalText": "ATM WDL INR 2000.00",
+        "accountId": "acc-canara-528",
+        "referenceNumber": "ATM992102918"
+      },
+      {
+        "id": "tx-blinkit-grocery",
+        "title": "Blinkit Groceries",
+        "amount": 345.50,
+        "amountPaise": 34550,
+        "type": "EXPENSE",
+        "category": "Food",
+        "date": "2026-10-17",
+        "source": "UPI",
+        "timestamp": 1729152000000,
+        "originalText": "Paid INR 345.50 at Blinkit",
+        "accountId": "acc-canara-528",
+        "referenceNumber": "UPI882910349102"
+      }
+    ],
+    "splitGroups": [
+      {
+        "id": "grp-goa-trip",
+        "name": "Weekend Goa Trip",
+        "createdAt": 1729000000000,
+        "updatedAt": 1729000000000
+      }
+    ],
+    "splitGroupMembers": [
+      {
+        "id": "mem-me",
+        "groupId": "grp-goa-trip",
+        "name": "Me",
+        "isMe": true,
+        "createdAt": 1729000000000
+      },
+      {
+        "id": "mem-arun",
+        "groupId": "grp-goa-trip",
+        "name": "Arun Pandiyan",
+        "isMe": false,
+        "createdAt": 1729000000000
+      },
+      {
+        "id": "mem-karthik",
+        "groupId": "grp-goa-trip",
+        "name": "Karthik",
+        "isMe": false,
+        "createdAt": 1729000000000
+      }
+    ],
+    "expenseSplits": [
+      {
+        "id": "split-dinner",
+        "transactionId": "tx-swiggy-arun",
+        "groupId": "grp-goa-trip",
+        "amountPaise": 48000,
+        "payerMemberId": "mem-me",
+        "createdAt": 1729000000000
+      }
+    ],
+    "expenseSplitShares": [
+      {
+        "id": "share-me",
+        "splitId": "split-dinner",
+        "memberId": "mem-me",
+        "shareAmountPaise": 16000
+      },
+      {
+        "id": "share-arun",
+        "splitId": "split-dinner",
+        "memberId": "mem-arun",
+        "shareAmountPaise": 16000
+      },
+      {
+        "id": "share-karthik",
+        "splitId": "split-dinner",
+        "memberId": "mem-karthik",
+        "shareAmountPaise": 16000
+      }
+    ],
+    "repayments": [
+      {
+        "id": "rep-arun-share",
+        "groupId": "grp-goa-trip",
+        "memberId": "mem-arun",
+        "amountPaise": 16000,
+        "unallocatedAmountPaise": 0,
+        "paymentDate": "2026-10-18",
+        "timestamp": 1729245000000,
+        "linkedTransactionId": null,
+        "note": "Settled dinner share via GPay"
+      }
+    ],
+    "repaymentAllocations": [
+      {
+        "id": "alloc-arun-dinner",
+        "repaymentId": "rep-arun-share",
+        "shareId": "share-arun",
+        "allocatedAmountPaise": 16000
+      }
+    ],
+    "recurringExpenses": [
+      {
+        "id": "rec-netflix",
+        "merchant": "Netflix",
+        "amount": 199.0,
+        "frequency": "MONTHLY",
+        "intervalDays": 30,
+        "lastTransactionTimestamp": 1727766000000,
+        "confirmedAt": 1727766000000,
+        "active": true,
+        "dismissed": false
+      }
+    ],
+    "paymentTemplates": [
+      {
+        "id": "tpl-canara",
+        "name": "Canara Bank Alert",
+        "transactionType": "DEBIT",
+        "sampleText": "An amount of INR 60.00 has been DEBITED from your account XXX528",
+        "templatePattern": "amount of INR (?<amount>[\\d\\.,]+) has been DEBITED from your account XXX(?<accountSuffix>\\d+)",
+        "enabled": true,
+        "createdAt": 1729000000000,
+        "updatedAt": 1729000000000
+      }
+    ],
+    "balanceObservations": [
+      {
+        "id": "obs-canara-latest",
+        "accountId": "acc-canara-528",
+        "accountSuffix": "528",
+        "balancePaise": 67508,
+        "balanceType": "AVAILABLE",
+        "currency": "INR",
+        "timestamp": 1728734400000,
+        "source": "GMAIL",
+        "senderOrPackage": "com.google.android.gm",
+        "referenceNumber": "628500182613",
+        "rawText": "Total Available Balance INR 675.08",
+        "isResolved": true,
+        "isReconciled": false,
+        "reconciledAt": null,
+        "createdAt": 1729000000000
+      }
+    ],
+    "sourceAccountMappings": [
+      {
+        "id": "sam-canara-alert",
+        "accountId": "acc-canara-528",
+        "sourcePattern": "CANARA_ALERT",
+        "senderOrPackage": "com.google.android.gm",
+        "matchingContext": "528",
+        "isConfirmed": true,
+        "createdAt": 1729000000000,
+        "updatedAt": 1729000000000
+      }
+    ]
+  }
+}

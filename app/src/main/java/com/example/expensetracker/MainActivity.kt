@@ -125,6 +125,7 @@ fun ExpenseTrackerApp(
     val unresolvedObservations by viewModel.unresolvedObservationsState.collectAsState()
     val reconciliationResults by viewModel.reconciliationResultsState.collectAsState()
     val backupExportState by viewModel.backupExportState.collectAsState()
+    val backupImportState by viewModel.backupImportState.collectAsState()
 
     val unassignedTransactionCount = remember(transactions) {
         transactions.count { it.accountId == null }
@@ -358,9 +359,13 @@ fun ExpenseTrackerApp(
                             },
                             totalTransactionCount = transactions.size,
                             backupExportState = backupExportState,
+                            backupImportState = backupImportState,
                             onExportBackupToUri = { uri -> viewModel.exportBackupToUri(uri) },
                             onShareBackup = { launcher -> viewModel.exportBackupForShare(launcher) },
                             onDismissBackupState = { viewModel.resetBackupExportState() },
+                            onImportBackupFile = { uri -> viewModel.loadAndValidateBackup(uri) },
+                            onConfirmImport = { mode -> viewModel.confirmImport(mode) },
+                            onDismissImportState = { viewModel.resetBackupImportState() },
                             onNavigateBack = { currentScreen = Screen.Overview }
                         )
                     }

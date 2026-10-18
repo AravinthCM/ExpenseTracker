@@ -142,4 +142,30 @@ class BackupManager(
         }
         return Intent.createChooser(shareIntent, "Share ExpenseTracker Backup")
     }
+
+    private val importer = BackupImporter(db)
+
+    suspend fun readBackupFromUri(context: Context, uri: Uri): Result<ExpenseTrackerBackup> = withContext(Dispatchers.IO) {
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                BackupJsonSerializer.deserializeFromStream(inputStream)
+            } ?: throw IllegalStateException("Could not open input stream for URI: $uri")
+        }
+    }
+
+    suspend fun validateAndPreview(backup: ExpenseTrackerBackup): ImportPreviewSummary = withContext(Dispatchers.IO) {
+        BackupValidator.generatePreviewSummary(backup, db)
+    }
+
+    suspend fun importBackup(
+        backup: ExpenseTrackerBackup,
+        mode: ImportMode,
+        context: Context? = null
+    ): Result<ImportResult> = withContext(Dispatchers.IO) {
+        when (mode) {
+            ImportMode.RESTORE_REPLACE -> importer.restoreBackup(backup, context)
+            ImportMode.MERGE -> importer.mergeBackup(backup)
+        }
+    }
 }
+

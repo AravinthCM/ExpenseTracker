@@ -94,9 +94,13 @@ fun ManagementScreen(
     onDeleteObservation: (observationId: String) -> Unit = {},
     totalTransactionCount: Int = 0,
     backupExportState: com.example.expensetracker.data.backup.BackupExportState = com.example.expensetracker.data.backup.BackupExportState.Idle,
+    backupImportState: com.example.expensetracker.data.backup.BackupImportState = com.example.expensetracker.data.backup.BackupImportState.Idle,
     onExportBackupToUri: (android.net.Uri) -> Unit = {},
     onShareBackup: (((android.content.Intent) -> Unit) -> Unit) = {},
+    onImportBackupFile: (android.net.Uri) -> Unit = {},
+    onConfirmImport: (com.example.expensetracker.data.backup.ImportMode) -> Unit = {},
     onDismissBackupState: () -> Unit = {},
+    onDismissImportState: () -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     var selectedTabIndex by remember(initialSelectedTab) { mutableIntStateOf(initialSelectedTab) }
@@ -353,9 +357,13 @@ fun ManagementScreen(
                         totalSplitGroups = splitGroups.size,
                         totalTemplates = paymentTemplates.size,
                         backupExportState = backupExportState,
+                        backupImportState = backupImportState,
                         onExportToUri = onExportBackupToUri,
                         onShareBackup = onShareBackup,
-                        onDismissState = onDismissBackupState
+                        onImportFileSelected = onImportBackupFile,
+                        onConfirmImport = onConfirmImport,
+                        onDismissState = onDismissBackupState,
+                        onDismissImportState = onDismissImportState
                     )
                 }
             }

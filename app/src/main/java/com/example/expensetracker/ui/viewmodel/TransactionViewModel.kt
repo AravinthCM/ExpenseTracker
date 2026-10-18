@@ -710,5 +710,72 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
     }
+
+    private val _backupImportState = kotlinx.coroutines.flow.MutableStateFlow<com.example.expensetracker.data.backup.BackupImportState>(
+        com.example.expensetracker.data.backup.BackupImportState.Idle
+    )
+    val backupImportState: StateFlow<com.example.expensetracker.data.backup.BackupImportState> = _backupImportState
+
+    fun resetBackupImportState() {
+        _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Idle
+    }
+
+    fun dismissImportPreview() {
+        _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Idle
+    }
+
+    fun loadAndValidateBackup(uri: android.net.Uri) {
+        viewModelScope.launch {
+            _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Validating
+            try {
+                val readResult = backupManager.readBackupFromUri(getApplication(), uri)
+                if (readResult.isSuccess) {
+                    val backup = readResult.getOrThrow()
+                    val summary = backupManager.validateAndPreview(backup)
+                    _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.PreviewReady(summary)
+                } else {
+                    _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Error(
+                        readResult.exceptionOrNull()?.localizedMessage ?: "Failed to read backup file"
+                    )
+                }
+            } catch (e: Exception) {
+                _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Error(
+                    e.localizedMessage ?: "Error parsing backup file"
+                )
+            }
+        }
+    }
+
+    fun confirmImport(mode: com.example.expensetracker.data.backup.ImportMode) {
+        val currentState = _backupImportState.value
+        if (currentState !is com.example.expensetracker.data.backup.BackupImportState.PreviewReady) return
+
+        viewModelScope.launch {
+            _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Importing
+            try {
+                val backup = currentState.summary.backup
+                val result = backupManager.importBackup(backup, mode, getApplication())
+                if (result.isSuccess) {
+                    val importRes = result.getOrThrow()
+                    val msg = when (mode) {
+                        com.example.expensetracker.data.backup.ImportMode.RESTORE_REPLACE ->
+                            "Database restored successfully (${importRes.transactionsImported} transactions, ${importRes.accountsImported} accounts)."
+                        com.example.expensetracker.data.backup.ImportMode.MERGE ->
+                            "Data merged successfully (${importRes.transactionsImported} added, ${importRes.duplicatesSkipped} duplicates skipped)."
+                    }
+                    _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Success(importRes, msg)
+                } else {
+                    _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Error(
+                        result.exceptionOrNull()?.localizedMessage ?: "Failed to perform import"
+                    )
+                }
+            } catch (e: Exception) {
+                _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Error(
+                    e.localizedMessage ?: "Error during import operation"
+                )
+            }
+        }
+    }
 }
+
 
