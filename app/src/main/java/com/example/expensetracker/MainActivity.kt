@@ -53,6 +53,9 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.expensetracker.model.Transaction
+import com.example.expensetracker.model.TransactionCategory
+import com.example.expensetracker.model.TransactionSource
+import com.example.expensetracker.model.TransactionType
 import com.example.expensetracker.service.TransactionNotificationHelper
 import com.example.expensetracker.ui.AddTransactionScreen
 import com.example.expensetracker.ui.AnalyticsScreen
@@ -124,6 +127,7 @@ fun ExpenseTrackerApp(
     val selectedAccountId by viewModel.selectedAccountIdState.collectAsState()
     val isBalanceVisible by viewModel.isBalanceVisibleState.collectAsState()
     val unresolvedObservations by viewModel.unresolvedObservationsState.collectAsState()
+    val allObservations by viewModel.allObservationsState.collectAsState()
     val reconciliationResults by viewModel.reconciliationResultsState.collectAsState()
     val backupExportState by viewModel.backupExportState.collectAsState()
     val backupImportState by viewModel.backupImportState.collectAsState()
@@ -141,6 +145,7 @@ fun ExpenseTrackerApp(
 
     var showAddSheet by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
+    var reconciliationSuggestedTransaction by remember { mutableStateOf<Transaction?>(null) }
     var selectedDetailTransaction by remember { mutableStateOf<Transaction?>(null) }
     var showSplash by rememberSaveable { mutableStateOf(true) }
 
@@ -325,6 +330,8 @@ fun ExpenseTrackerApp(
                             paymentTemplates = paymentTemplates,
                             splitGroups = splitGroups,
                             accountsWithBalances = accountsWithBalances,
+                            transactions = transactions,
+                            allObservations = allObservations,
                             unassignedTransactionCount = unassignedTransactionCount,
                             initialSelectedTab = managementInitialTab,
                             initialSampleForTemplate = sampleForTemplate,
@@ -350,6 +357,26 @@ fun ExpenseTrackerApp(
                             onSetAccountArchived = { accId, isArchived -> viewModel.setAccountArchived(accId, isArchived) },
                             onDeleteAccount = { acc -> viewModel.deleteAccount(acc) },
                             onAssignUnassignedTransactions = { accId -> viewModel.assignUnassignedTransactionsToAccount(accId) },
+                            onAssignSelectedUnassigned = { transactionIds, accountId ->
+                                viewModel.assignUnassignedTransactionIdsToAccount(transactionIds, accountId)
+                            },
+                            onAddReconciliationExpense = { account, amountPaise, timestamp ->
+                                reconciliationSuggestedTransaction = Transaction(
+                                    id = java.util.UUID.randomUUID().toString(),
+                                    title = "Missing expense",
+                                    amount = amountPaise / 100.0,
+                                    type = TransactionType.EXPENSE,
+                                    category = TransactionCategory.OTHER,
+                                    date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(timestamp)),
+                                    source = TransactionSource.MANUAL,
+                                    timestamp = timestamp,
+                                    accountId = account.id
+                                )
+                            },
+                            onReviewReconciliationTransactions = { accountId ->
+                                viewModel.selectAccount(accountId)
+                                currentScreen = Screen.Transactions
+                            },
                             unresolvedObservations = unresolvedObservations,
                             reconciliationResults = reconciliationResults,
                             onResolveObservation = { obsId, accId, rememberMapping ->
@@ -398,6 +425,20 @@ fun ExpenseTrackerApp(
                 onSave = { newTx ->
                     viewModel.addTransaction(newTx)
                     showAddSheet = false
+                }
+            )
+        }
+
+        reconciliationSuggestedTransaction?.let { suggested ->
+            com.example.expensetracker.ui.components.AddOrEditTransactionBottomSheet(
+                initialTransaction = suggested,
+                availableCategories = categories.map { it.name },
+                accounts = accounts.filter { !it.isArchived },
+                defaultAccountId = suggested.accountId,
+                onDismiss = { reconciliationSuggestedTransaction = null },
+                onSave = { transaction ->
+                    viewModel.addTransaction(transaction)
+                    reconciliationSuggestedTransaction = null
                 }
             )
         }

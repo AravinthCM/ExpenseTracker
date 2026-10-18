@@ -55,6 +55,7 @@ import com.example.expensetracker.data.local.AccountEntity
 import com.example.expensetracker.data.local.BalanceObservationEntity
 import com.example.expensetracker.model.AccountWithBalance
 import com.example.expensetracker.model.ReconciliationResult
+import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.ui.theme.LocalAppColors
 import com.example.expensetracker.ui.util.CurrencyFormatter
 import kotlin.math.roundToLong
@@ -62,8 +63,10 @@ import kotlin.math.roundToLong
 @Composable
 fun AccountsTabContent(
     accountsWithBalances: List<AccountWithBalance>,
+    transactions: List<Transaction> = emptyList(),
     unassignedCount: Int,
     unresolvedObservations: List<BalanceObservationEntity> = emptyList(),
+    allObservations: List<BalanceObservationEntity> = emptyList(),
     reconciliationResults: Map<String, ReconciliationResult> = emptyMap(),
     onAddAccountClick: () -> Unit,
     onEditAccountClick: (AccountEntity) -> Unit,
@@ -71,11 +74,142 @@ fun AccountsTabContent(
     onToggleArchivedClick: (AccountEntity) -> Unit,
     onDeleteAccountClick: (AccountEntity) -> Unit,
     onAssignUnassignedClick: (String) -> Unit,
+    onAssignSelectedUnassigned: (List<String>, String) -> Unit = { _, _ -> },
+    onAddReconciliationExpense: (AccountEntity, Long, Long) -> Unit = { _, _, _ -> },
+    onReviewReconciliationTransactions: (String) -> Unit = {},
     onResolveObservation: (observationId: String, accountId: String, rememberMapping: Boolean) -> Unit = { _, _, _ -> },
     onDeleteObservation: (observationId: String) -> Unit = {}
 ) {
     val appColors = LocalAppColors.current
     var reviewingObservation by remember { mutableStateOf<BalanceObservationEntity?>(null) }
+    var deletingAccount by remember { mutableStateOf<AccountEntity?>(null) }
+    var confirmDeletion by remember { mutableStateOf(false) }
+    var reviewingUnassigned by remember { mutableStateOf(false) }
+    var selectedUnassignedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var selectedTargetAccountId by remember { mutableStateOf<String?>(null) }
+
+    val unassignedTransactions = transactions.filter { transaction ->
+        transaction.accountId == null || accountsWithBalances.none { it.account.id == transaction.accountId }
+    }
+
+    if (reviewingUnassigned) {
+        AlertDialog(
+            onDismissRequest = { reviewingUnassigned = false },
+            title = { Text("Review unassigned transactions", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Select records to assign. Amounts, dates, descriptions, and categories will remain unchanged.")
+                    unassignedTransactions.forEach { transaction ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = transaction.id in selectedUnassignedIds,
+                                onCheckedChange = { checked ->
+                                    selectedUnassignedIds = if (checked) selectedUnassignedIds + transaction.id else selectedUnassignedIds - transaction.id
+                                }
+                            )
+                            Column {
+                                Text(transaction.title, fontWeight = FontWeight.SemiBold)
+                                Text("${transaction.date} • ${transaction.type.name} • ${CurrencyFormatter.format(transaction.amount)}", fontSize = 11.sp)
+                            }
+                        }
+                    }
+                    Text("Assign to:", fontWeight = FontWeight.Bold)
+                    accountsWithBalances.filter { !it.account.isArchived }.forEach { account ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { selectedTargetAccountId = account.account.id },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedTargetAccountId == account.account.id,
+                                onClick = { selectedTargetAccountId = account.account.id }
+                            )
+                            Text(account.account.name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedTargetAccountId?.let { target ->
+                            onAssignSelectedUnassigned(selectedUnassignedIds.toList(), target)
+                            selectedUnassignedIds = emptySet()
+                            selectedTargetAccountId = null
+                            reviewingUnassigned = false
+                        }
+                    },
+                    enabled = selectedUnassignedIds.isNotEmpty() && selectedTargetAccountId != null
+                ) { Text("Assign selected") }
+            },
+            dismissButton = { TextButton(onClick = { reviewingUnassigned = false }) { Text("Cancel") } }
+        )
+    }
+
+    deletingAccount?.let { account ->
+        val currentAccount = accountsWithBalances.firstOrNull { it.account.id == account.id }?.account ?: account
+        val requiresReplacementPrimary = currentAccount.isPrimary && !currentAccount.isArchived
+        val replacementAccounts = accountsWithBalances
+            .map { it.account }
+            .filter { !it.isArchived && it.id != currentAccount.id }
+        val transactionCount = transactions.count { it.accountId == account.id }
+        val observationCount = allObservations.count { it.accountId == account.id }
+        AlertDialog(
+            onDismissRequest = {
+                deletingAccount = null
+                confirmDeletion = false
+            },
+            title = { Text(if (confirmDeletion) "Confirm permanent deletion" else "Delete account?", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Account: ${account.name}${account.accountNumber?.let { " (••••$it)" } ?: ""}")
+                    if (!confirmDeletion) {
+                        Text("This account has $transactionCount transaction(s) and $observationCount balance observation(s).")
+                        Text("Transactions will be preserved but become unassigned. Balance observations will become unassigned, and source-account mappings will be removed. This deletion cannot be undone.")
+                        if (requiresReplacementPrimary) {
+                            Text("Choose another active account as primary before archiving or deleting this account.", fontWeight = FontWeight.Bold)
+                            replacementAccounts.forEach { replacement ->
+                                TextButton(onClick = { onSetPrimaryAccountClick(replacement.id) }) {
+                                    Text("Make ${replacement.name} primary")
+                                }
+                            }
+                        }
+                    } else {
+                        Text("The account will be deleted permanently. Historical transactions will remain without an account assignment.")
+                    }
+                }
+            },
+            confirmButton = {
+                if (!confirmDeletion) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            onToggleArchivedClick(account)
+                            deletingAccount = null
+                        }, enabled = !requiresReplacementPrimary) { Text("Archive") }
+                            Button(
+                                onClick = { confirmDeletion = true },
+                                enabled = !requiresReplacementPrimary
+                            ) { Text("Continue") }
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            onDeleteAccountClick(account)
+                            deletingAccount = null
+                            confirmDeletion = false
+                        },
+                        enabled = !requiresReplacementPrimary,
+                        colors = ButtonDefaults.buttonColors(containerColor = appColors.negative)
+                    ) { Text("Delete permanently") }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    deletingAccount = null
+                    confirmDeletion = false
+                }) { Text("Cancel") }
+            }
+        )
+    }
 
     if (reviewingObservation != null) {
         AssignObservationAccountDialog(
@@ -200,14 +334,14 @@ fun AccountsTabContent(
                         if (primaryAccount != null) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(
-                                onClick = { onAssignUnassignedClick(primaryAccount.account.id) },
+                                onClick = { reviewingUnassigned = true },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = appColors.accent,
                                     contentColor = appColors.accentInk
                                 ),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("Assign all to ${primaryAccount.account.name}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Review and assign", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -254,8 +388,12 @@ fun AccountsTabContent(
                     onEditClick = { onEditAccountClick(item.account) },
                     onSetPrimaryClick = { onSetPrimaryAccountClick(item.account.id) },
                     onToggleArchivedClick = { onToggleArchivedClick(item.account) },
-                    onDeleteClick = { onDeleteAccountClick(item.account) },
-                    onAssignUnassignedClick = { onAssignUnassignedClick(item.account.id) }
+                    onDeleteClick = { deletingAccount = item.account },
+                    onAssignUnassignedClick = { onAssignUnassignedClick(item.account.id) },
+                    onAddReconciliationExpense = { amountPaise, timestamp ->
+                        onAddReconciliationExpense(item.account, amountPaise, timestamp)
+                    },
+                    onReviewReconciliationTransactions = { onReviewReconciliationTransactions(item.account.id) }
                 )
             }
         }
@@ -270,7 +408,9 @@ fun AccountCardItem(
     onSetPrimaryClick: () -> Unit,
     onToggleArchivedClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    onAssignUnassignedClick: () -> Unit
+    onAssignUnassignedClick: () -> Unit,
+    onAddReconciliationExpense: (Long, Long) -> Unit = { _, _ -> },
+    onReviewReconciliationTransactions: () -> Unit = {}
 ) {
     val appColors = LocalAppColors.current
     val account = accountWithBalance.account
@@ -423,6 +563,20 @@ fun AccountCardItem(
                             fontWeight = FontWeight.SemiBold,
                             color = appColors.negative
                         )
+                    }
+                }
+                if (reconciliationResult.discrepancyPaise != null && reconciliationResult.discrepancyPaise != 0L) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (reconciliationResult.discrepancyPaise < 0L) {
+                            TextButton(onClick = {
+                                onAddReconciliationExpense(
+                                    kotlin.math.abs(reconciliationResult.discrepancyPaise),
+                                    reconciliationResult.latestObservation.timestamp
+                                )
+                            }) { Text("+ Add missing expense") }
+                        } else {
+                            TextButton(onClick = onReviewReconciliationTransactions) { Text("Review recorded transactions") }
+                        }
                     }
                 }
             }

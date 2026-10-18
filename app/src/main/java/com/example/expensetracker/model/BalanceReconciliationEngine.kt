@@ -6,6 +6,7 @@ import com.example.expensetracker.data.local.TransactionEntity
 
 data class ReconciliationResult(
     val account: AccountEntity,
+    val previousObservation: BalanceObservationEntity? = null,
     val latestObservation: BalanceObservationEntity?,
     val expectedBalancePaise: Long,
     val observedBalancePaise: Long?,
@@ -25,9 +26,10 @@ object BalanceReconciliationEngine {
      *
      * Rules:
      * 1. Compares only observations for the exact account, matching currency, and compatible balance type.
-     * 2. Resolves out-of-order/delayed messages by using the latest observation strictly by observation timestamp.
-     * 3. Calculates expected balance from transactions occurring on or before the observation timestamp.
-     * 4. NEVER creates synthetic/phantom transactions based on a discrepancy.
+    * 2. Compares the latest observation with the immediately preceding valid observation when one exists.
+    * 3. Applies only transactions after the earlier observation and through the later observation.
+    * 4. Uses opening balance semantics only when there is no earlier observation.
+    * 5. NEVER creates synthetic/phantom transactions based on a discrepancy.
      */
     fun reconcileAccount(
         account: AccountEntity,
@@ -57,14 +59,23 @@ object BalanceReconciliationEngine {
             )
         }
 
-        // Out-of-order handling: the latest observation by bank timestamp always wins
-        val latestObs = eligibleObservations.maxByOrNull { it.timestamp }!!
+        val chronologicalObservations = eligibleObservations.sortedBy { it.timestamp }
+        val latestObs = chronologicalObservations.last()
+        val previousObs = chronologicalObservations.dropLast(1).lastOrNull()
 
-        // Expected balance up to the observation timestamp
-        val transactionsUpToObs = transactions.filter { tx ->
-            tx.accountId == account.id && tx.timestamp <= latestObs.timestamp
+        val expectedBalancePaise = if (previousObs == null) {
+            val transactionsUpToObs = transactions.filter { tx ->
+                tx.accountId == account.id && tx.timestamp <= latestObs.timestamp
+            }
+            AccountBalanceCalculator.calculateAccountBalancePaise(account, transactionsUpToObs)
+        } else {
+            val transactionsBetweenObservations = transactions.filter { tx ->
+                tx.accountId == account.id &&
+                        tx.timestamp > previousObs.timestamp &&
+                        tx.timestamp <= latestObs.timestamp
+            }
+            previousObs.balancePaise + netTransactionChangePaise(transactionsBetweenObservations)
         }
-        val expectedBalancePaise = AccountBalanceCalculator.calculateAccountBalancePaise(account, transactionsUpToObs)
         val discrepancyPaise = latestObs.balancePaise - expectedBalancePaise
         val isReconciled = discrepancyPaise == 0L
 
@@ -81,6 +92,7 @@ object BalanceReconciliationEngine {
 
         return ReconciliationResult(
             account = account,
+            previousObservation = previousObs,
             latestObservation = latestObs,
             expectedBalancePaise = expectedBalancePaise,
             observedBalancePaise = latestObs.balancePaise,
@@ -88,5 +100,16 @@ object BalanceReconciliationEngine {
             isReconciled = isReconciled,
             statusMessage = statusMessage
         )
+    }
+
+    private fun netTransactionChangePaise(transactions: List<TransactionEntity>): Long {
+        return transactions.sumOf { transaction ->
+            val amountPaise = Math.round(transaction.amount * 100.0)
+            when (transaction.type.uppercase()) {
+                "INCOME" -> amountPaise
+                "EXPENSE" -> -amountPaise
+                else -> 0L
+            }
+        }
     }
 }

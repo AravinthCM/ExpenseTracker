@@ -228,7 +228,7 @@ class AccountIdentificationAndReconciliationTest {
         val olderObs = BalanceObservationEntity(
             id = "obs_older",
             accountId = canara1.id,
-            balancePaise = 50000L, // ₹500.00
+            balancePaise = 100000L, // ₹1,000.00 starting bank balance
             balanceType = "AVAILABLE",
             currency = "INR",
             timestamp = tOlder,
@@ -274,7 +274,8 @@ class AccountIdentificationAndReconciliationTest {
         assertEquals("obs_newer", result.latestObservation!!.id)
         assertEquals(45000L, result.observedBalancePaise)
 
-        // Opening balance 100,000 - 55,000 expense (at 1500L <= 2000L) = 45,000 paise
+        // The later observation starts from the earlier bank balance and applies
+        // only the transaction between the two observations.
         assertEquals(45000L, result.expectedBalancePaise)
         assertEquals(0L, result.discrepancyPaise)
         assertTrue(result.isReconciled)

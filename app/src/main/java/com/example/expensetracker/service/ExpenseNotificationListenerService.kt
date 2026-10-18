@@ -161,6 +161,12 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
 
                     // 2. Balance Observation Recording
                     val observedBalance = detectionResult.balance ?: parsedTransaction?.balance ?: NotificationParser.extractBalance(rawText)
+                    val transactionAccountId = if (identifiedAccountId != null || observedBalance != null) {
+                        identifiedAccountId
+                    } else {
+                        // A transaction without a bank balance may safely use the active primary account.
+                        db.accountDao().getPrimaryAccountSync()?.id
+                    }
                     if (observedBalance != null && observedBalance >= 0) {
                         val ref = parsedTransaction?.referenceNumber ?: NotificationParser.extractReferenceNumber(rawText)
                         val balancePaise = Math.round(observedBalance * 100.0)
@@ -203,7 +209,7 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
                         val normalizedTransaction = TransactionNormalizer.normalize(
                             parsed = parsedTransaction,
                             rawText = rawText,
-                            accountId = identifiedAccountId
+                            accountId = transactionAccountId
                         )
                         Log.d(TAG, "NORMALIZE_RESULT: amount=${normalizedTransaction.amount} type=${normalizedTransaction.type} name=${normalizedTransaction.name} source=${normalizedTransaction.source} accountId=${normalizedTransaction.accountId}")
 

@@ -68,7 +68,9 @@ fun ManagementScreen(
     paymentTemplates: List<com.example.expensetracker.data.local.PaymentTemplateEntity> = emptyList(),
     splitGroups: List<com.example.expensetracker.data.local.SplitGroupWithMembers> = emptyList(),
     accountsWithBalances: List<com.example.expensetracker.model.AccountWithBalance> = emptyList(),
+    transactions: List<com.example.expensetracker.model.Transaction> = emptyList(),
     unassignedTransactionCount: Int = 0,
+    allObservations: List<com.example.expensetracker.data.local.BalanceObservationEntity> = emptyList(),
     initialSelectedTab: Int = 0,
     initialSampleForTemplate: String? = null,
     onAddCategory: (String) -> Unit,
@@ -88,6 +90,9 @@ fun ManagementScreen(
     onSetAccountArchived: (accountId: String, isArchived: Boolean) -> Unit = { _, _ -> },
     onDeleteAccount: (com.example.expensetracker.data.local.AccountEntity) -> Unit = {},
     onAssignUnassignedTransactions: (accountId: String) -> Unit = {},
+    onAssignSelectedUnassigned: (transactionIds: List<String>, accountId: String) -> Unit = { _, _ -> },
+    onAddReconciliationExpense: (com.example.expensetracker.data.local.AccountEntity, Long, Long) -> Unit = { _, _, _ -> },
+    onReviewReconciliationTransactions: (String) -> Unit = {},
     unresolvedObservations: List<com.example.expensetracker.data.local.BalanceObservationEntity> = emptyList(),
     reconciliationResults: Map<String, com.example.expensetracker.model.ReconciliationResult> = emptyMap(),
     onResolveObservation: (observationId: String, accountId: String, rememberMapping: Boolean) -> Unit = { _, _, _ -> },
@@ -338,6 +343,8 @@ fun ManagementScreen(
                     )
                     4 -> com.example.expensetracker.ui.components.AccountsTabContent(
                         accountsWithBalances = accountsWithBalances,
+                        transactions = transactions,
+                        allObservations = allObservations,
                         unassignedCount = unassignedTransactionCount,
                         unresolvedObservations = unresolvedObservations,
                         reconciliationResults = reconciliationResults,
@@ -347,6 +354,9 @@ fun ManagementScreen(
                         onToggleArchivedClick = { acc -> onSetAccountArchived(acc.id, !acc.isArchived) },
                         onDeleteAccountClick = onDeleteAccount,
                         onAssignUnassignedClick = onAssignUnassignedTransactions,
+                        onAssignSelectedUnassigned = onAssignSelectedUnassigned,
+                        onAddReconciliationExpense = onAddReconciliationExpense,
+                        onReviewReconciliationTransactions = onReviewReconciliationTransactions,
                         onResolveObservation = onResolveObservation,
                         onDeleteObservation = onDeleteObservation
                     )

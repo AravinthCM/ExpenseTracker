@@ -310,27 +310,47 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setPrimaryAccount(accountId: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            accountDao.setPrimaryAccount(accountId)
+            if (accountDao.getAccountByIdSync(accountId)?.isArchived == false) {
+                accountDao.setPrimaryAccount(accountId)
+            }
         }
     }
 
     fun setAccountArchived(accountId: String, isArchived: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
+            val account = accountDao.getAccountByIdSync(accountId) ?: return@launch
+            if (isArchived && account.isPrimary) return@launch
             accountDao.setArchivedStatus(accountId, isArchived)
         }
     }
 
     fun deleteAccount(account: com.example.expensetracker.data.local.AccountEntity) {
         viewModelScope.launch(Dispatchers.IO) {
-            // Reassign transactions to null (unassigned) before deleting account to preserve history
-            transactionDao.reassignTransactions(account.id, null)
-            accountDao.deleteAccountById(account.id)
+        val current = accountDao.getAccountByIdSync(account.id)
+            ?: return@launch
+        if (current.isPrimary && !current.isArchived) {
+            return@launch
+        }
+            db.runInTransaction {
+                transactionDao.reassignTransactions(account.id, null)
+                accountDao.deleteAccountById(account.id)
+            }
         }
     }
 
     fun assignUnassignedTransactionsToAccount(accountId: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            transactionDao.assignUnassignedTransactionsToAccount(accountId)
+            if (accountDao.getAccountByIdSync(accountId)?.isArchived == false) {
+                transactionDao.assignUnassignedTransactionsToAccount(accountId)
+            }
+        }
+    }
+
+    fun assignUnassignedTransactionIdsToAccount(transactionIds: List<String>, accountId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (accountDao.getAccountByIdSync(accountId)?.isArchived == false && transactionIds.isNotEmpty()) {
+                transactionDao.assignUnassignedTransactionIdsToAccount(transactionIds, accountId)
+            }
         }
     }
 

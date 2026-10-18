@@ -182,6 +182,7 @@ class TestDatabaseHarness : AppDatabase() {
         override fun getAccountByIdSync(id: String): AccountEntity? = accountsTable.find { it.id == id }
         override fun getPrimaryAccountSync(): AccountEntity? = accountsTable.find { it.isPrimary && !it.isArchived }
         override fun getPrimaryAccountFlow(): Flow<AccountEntity?> = flowOf(getPrimaryAccountSync())
+        override fun getActiveAccountCountSync(): Int = accountsTable.count { !it.isArchived }
         override fun insertAccount(account: AccountEntity) {
             val existing = accountsTable.find { it.id == account.id }
             if (existing != null) {
@@ -283,6 +284,20 @@ class TestDatabaseHarness : AppDatabase() {
         override fun assignUnassignedTransactionsToAccount(accountId: String) {
             val updated = transactionsTable.map { if (it.accountId == null) it.copy(accountId = accountId) else it }
             transactionsTable.clear(); transactionsTable.addAll(updated)
+        }
+        override fun assignUnassignedTransactionIdsToAccount(transactionIds: List<String>, accountId: String): Int {
+            var updatedCount = 0
+            val updated = transactionsTable.map { transaction ->
+                if (transaction.id in transactionIds && (transaction.accountId == null || accountsTable.none { it.id == transaction.accountId })) {
+                    updatedCount++
+                    transaction.copy(accountId = accountId)
+                } else transaction
+            }
+            transactionsTable.clear(); transactionsTable.addAll(updated)
+            return updatedCount
+        }
+        override fun getUnassignedTransactionsSync(): List<TransactionEntity> = transactionsTable.filter {
+            it.accountId == null || accountsTable.none { account -> account.id == it.accountId }
         }
     }
 

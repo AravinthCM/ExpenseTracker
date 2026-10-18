@@ -55,4 +55,7 @@ interface AccountDao {
 
     @Query("UPDATE accounts SET isArchived = :isArchived, updatedAt = :updatedAt WHERE id = :accountId")
     fun setArchivedStatus(accountId: String, isArchived: Boolean, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("SELECT COUNT(*) FROM accounts WHERE isArchived = 0")
+    fun getActiveAccountCountSync(): Int
 }

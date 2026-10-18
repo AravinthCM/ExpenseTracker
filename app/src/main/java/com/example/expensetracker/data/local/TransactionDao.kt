@@ -50,4 +50,10 @@ interface TransactionDao {
 
     @Query("UPDATE transactions SET accountId = :accountId WHERE accountId IS NULL")
     fun assignUnassignedTransactionsToAccount(accountId: String)
+
+    @Query("UPDATE transactions SET accountId = :accountId WHERE id IN (:transactionIds) AND (accountId IS NULL OR accountId NOT IN (SELECT id FROM accounts))")
+    fun assignUnassignedTransactionIdsToAccount(transactionIds: List<String>, accountId: String): Int
+
+    @Query("SELECT * FROM transactions WHERE accountId IS NULL OR accountId NOT IN (SELECT id FROM accounts) ORDER BY timestamp DESC")
+    fun getUnassignedTransactionsSync(): List<TransactionEntity>
 }
