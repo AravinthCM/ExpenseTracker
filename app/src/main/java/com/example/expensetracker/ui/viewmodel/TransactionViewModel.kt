@@ -23,6 +23,7 @@ import com.example.expensetracker.service.DetectedRecurringCandidate
 import com.example.expensetracker.service.RecurringExpenseDetector
 
 import com.example.expensetracker.service.TransactionNotificationHelper
+import com.example.expensetracker.data.preferences.BalancePrivacyPreferences
 
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -40,6 +41,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val accountDao = db.accountDao()
     private val balanceObservationDao = db.balanceObservationDao()
     private val sourceAccountMappingDao = db.sourceAccountMappingDao()
+    private val balancePrivacyPreferences = BalancePrivacyPreferences(application)
 
     val accountsState: StateFlow<List<com.example.expensetracker.data.local.AccountEntity>> = accountDao.getAllAccounts()
         .stateIn(
@@ -115,15 +117,21 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedAccountId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val selectedAccountIdState: StateFlow<String?> = _selectedAccountId
 
-    private val _isBalanceVisible = kotlinx.coroutines.flow.MutableStateFlow<Boolean>(true)
-    val isBalanceVisibleState: StateFlow<Boolean> = _isBalanceVisible
+    val isBalanceVisibleState: StateFlow<Boolean> = balancePrivacyPreferences.isBalanceVisible
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
 
     fun selectAccount(accountId: String?) {
         _selectedAccountId.value = accountId
     }
 
     fun toggleBalanceVisibility() {
-        _isBalanceVisible.value = !_isBalanceVisible.value
+        viewModelScope.launch {
+            balancePrivacyPreferences.setBalanceVisible(!isBalanceVisibleState.value)
+        }
     }
 
     val splitGroupsState: StateFlow<List<com.example.expensetracker.data.local.SplitGroupWithMembers>> = splitGroupDao.getAllGroupsWithMembers()

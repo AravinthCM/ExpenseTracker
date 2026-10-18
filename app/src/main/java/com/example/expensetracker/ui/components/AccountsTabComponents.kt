@@ -602,7 +602,7 @@ fun AssignObservationAccountDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "Bank balance of ₹${CurrencyFormatter.format(observation.balancePaise / 100.0)} was observed, but the account could not be automatically identified.",
+                        text = "Bank balance of ₹${CurrencyFormatter.format(observation.balancePaise / 100.0)} was observed, but the account could not be automatically identified.",
                     fontSize = 12.5.sp,
                     color = appColors.inkMuted
                 )

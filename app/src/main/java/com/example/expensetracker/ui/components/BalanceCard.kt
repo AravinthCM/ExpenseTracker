@@ -68,9 +68,9 @@ fun BalanceCard(
         else -> activeAccounts.find { it.id == selectedAccountId }?.name ?: "All Accounts"
     }
 
-    val displayBalance = if (isBalanceVisible) CurrencyFormatter.format(totalBalance) else "••••••••"
-    val displayIncome = if (isBalanceVisible) CurrencyFormatter.format(totalIncome) else "••••••"
-    val displayExpenses = if (isBalanceVisible) CurrencyFormatter.format(totalExpenses) else "••••••"
+    val displayBalance = CurrencyFormatter.format(totalBalance, isBalanceVisible)
+    val displayIncome = CurrencyFormatter.format(totalIncome, isBalanceVisible)
+    val displayExpenses = CurrencyFormatter.format(totalExpenses, isBalanceVisible)
 
     Card(
         modifier = modifier.fillMaxWidth(),

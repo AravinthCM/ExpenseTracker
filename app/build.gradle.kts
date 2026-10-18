@@ -41,6 +41,9 @@ dependencies {
     // ViewModel Compose lifecycle integration
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
 
+    // Persistent UI preferences
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
     // Android 12+ SplashScreen API
     implementation("androidx.core:core-splashscreen:1.0.1")
 

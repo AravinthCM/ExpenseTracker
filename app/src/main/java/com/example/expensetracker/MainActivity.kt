@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -143,7 +144,7 @@ fun ExpenseTrackerApp(
     var selectedDetailTransaction by remember { mutableStateOf<Transaction?>(null) }
     var showSplash by rememberSaveable { mutableStateOf(true) }
 
-    ExpenseTrackerTheme(darkTheme = isDarkTheme) {
+        ExpenseTrackerTheme(darkTheme = isDarkTheme) {
         val appColors = LocalAppColors.current
 
         if (showSplash) {
