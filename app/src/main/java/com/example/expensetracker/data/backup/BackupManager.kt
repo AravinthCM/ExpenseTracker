@@ -96,7 +96,7 @@ class BackupManager(
                 schemaVersion = CURRENT_BACKUP_SCHEMA_VERSION,
                 exportedAt = exportedAt,
                 appVersion = appVersion,
-                databaseVersion = 12,
+                databaseVersion = 13,
                 data = payload,
                 metadata = metadata
             )

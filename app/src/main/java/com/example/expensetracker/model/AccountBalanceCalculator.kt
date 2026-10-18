@@ -23,7 +23,7 @@ object AccountBalanceCalculator {
             val amountPaise = (tx.amount * 100.0).roundToLong()
             when (tx.type) {
                 "INCOME" -> balance += amountPaise
-                "EXPENSE" -> balance -= amountPaise
+                "EXPENSE" -> if (tx.balanceIncludedInAccount != true) balance -= amountPaise
                 else -> { /* TRANSFER or unknown: ignored to prevent double counting */ }
             }
         }

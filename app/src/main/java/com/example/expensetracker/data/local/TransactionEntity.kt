@@ -27,7 +27,8 @@ data class TransactionEntity(
     val timestamp: Long,
     val originalText: String = "",
     val accountId: String? = null,
-    val referenceNumber: String? = null
+    val referenceNumber: String? = null,
+    val balanceIncludedInAccount: Boolean? = null
 )
 
 fun TransactionEntity.toDomainModel(): Transaction {
@@ -60,7 +61,8 @@ fun TransactionEntity.toDomainModel(): Transaction {
         timestamp = timestamp,
         originalText = originalText,
         accountId = accountId,
-        referenceNumber = referenceNumber
+        referenceNumber = referenceNumber,
+        balanceIncludedInAccount = balanceIncludedInAccount
     )
 }
 
@@ -76,6 +78,7 @@ fun Transaction.toEntity(): TransactionEntity {
         timestamp = timestamp,
         originalText = originalText,
         accountId = accountId,
-        referenceNumber = referenceNumber
+        referenceNumber = referenceNumber,
+        balanceIncludedInAccount = balanceIncludedInAccount
     )
 }

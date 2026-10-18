@@ -40,7 +40,8 @@ data class BackupTransaction(
     val timestamp: Long,
     val originalText: String = "",
     val accountId: String? = null,
-    val referenceNumber: String? = null
+    val referenceNumber: String? = null,
+    val balanceIncludedInAccount: Boolean? = null
 ) {
     fun toEntity(): TransactionEntity {
         return TransactionEntity(
@@ -54,7 +55,8 @@ data class BackupTransaction(
             timestamp = timestamp,
             originalText = originalText,
             accountId = accountId,
-            referenceNumber = referenceNumber
+            referenceNumber = referenceNumber,
+            balanceIncludedInAccount = balanceIncludedInAccount
         )
     }
 }
@@ -72,7 +74,8 @@ fun TransactionEntity.toBackupTransaction(): BackupTransaction {
         timestamp = timestamp,
         originalText = originalText,
         accountId = accountId,
-        referenceNumber = referenceNumber
+        referenceNumber = referenceNumber,
+        balanceIncludedInAccount = balanceIncludedInAccount
     )
 }
 

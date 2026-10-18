@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -82,6 +83,8 @@ fun AddOrEditTransactionBottomSheet(
             if (initialTransaction != null) initialTransaction.accountId else (defaultAccountId ?: accounts.find { it.isPrimary }?.id)
         )
     }
+    var balanceIncludedInAccount by remember { mutableStateOf(initialTransaction?.balanceIncludedInAccount) }
+    var balanceInclusionError by remember { mutableStateOf<String?>(null) }
     var accountDropdownExpanded by remember { mutableStateOf(false) }
     var dateText by remember {
         mutableStateOf(
@@ -375,6 +378,42 @@ fun AddOrEditTransactionBottomSheet(
                 }
             }
 
+            if (type == TransactionType.EXPENSE && selectedAccountId != null) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "Has this expense already been included in the account balance?",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
+                    color = appColors.inkMuted
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Already included means the bank balance already reflects it, so it will not be deducted again.",
+                    fontSize = 11.sp,
+                    color = appColors.inkFaint
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = balanceIncludedInAccount == true,
+                        onClick = {
+                            balanceIncludedInAccount = true
+                            balanceInclusionError = null
+                        }
+                    )
+                    Text("Yes - Already included", fontSize = 12.5.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = balanceIncludedInAccount == false,
+                        onClick = {
+                            balanceIncludedInAccount = false
+                            balanceInclusionError = null
+                        }
+                    )
+                    Text("No - Not included yet", fontSize = 12.5.sp)
+                }
+                balanceInclusionError?.let { Text(it, fontSize = 11.sp, color = appColors.negative) }
+            }
+
             Spacer(modifier = Modifier.height(14.dp))
 
             // 5. Date Field
@@ -421,6 +460,10 @@ fun AddOrEditTransactionBottomSheet(
                         titleError = "Enter merchant / description"
                         hasErr = true
                     }
+                    if (type == TransactionType.EXPENSE && selectedAccountId != null && balanceIncludedInAccount == null) {
+                        balanceInclusionError = "Choose whether the expense is already included in the account balance."
+                        hasErr = true
+                    }
 
                     if (!hasErr && parsedAmount != null) {
                         val savedTx = initialTransaction?.copy(
@@ -429,7 +472,8 @@ fun AddOrEditTransactionBottomSheet(
                             type = type,
                             category = selectedCategory,
                             date = dateText,
-                            accountId = selectedAccountId
+                            accountId = selectedAccountId,
+                            balanceIncludedInAccount = if (type == TransactionType.EXPENSE && selectedAccountId != null) balanceIncludedInAccount else null
                         ) ?: Transaction(
                             id = UUID.randomUUID().toString(),
                             title = trimmedTitle,
@@ -438,7 +482,8 @@ fun AddOrEditTransactionBottomSheet(
                             category = selectedCategory,
                             date = dateText,
                             source = TransactionSource.MANUAL,
-                            accountId = selectedAccountId
+                            accountId = selectedAccountId,
+                            balanceIncludedInAccount = if (type == TransactionType.EXPENSE && selectedAccountId != null) balanceIncludedInAccount else null
                         )
                         onSave(savedTx)
                     }

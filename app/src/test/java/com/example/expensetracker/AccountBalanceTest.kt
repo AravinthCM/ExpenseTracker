@@ -110,6 +110,57 @@ class AccountBalanceTest {
     }
 
     @Test
+    fun expenseAlreadyIncludedInAccountBalanceIsNotDeductedAgain() {
+        val account = AccountEntity(id = "acc1", name = "SBI", openingBalancePaise = 100000L)
+        val transaction = TransactionEntity(
+            id = "included",
+            title = "Bank debit already reflected",
+            amount = 250.0,
+            type = "EXPENSE",
+            category = "FOOD",
+            date = "Today",
+            source = "MANUAL",
+            timestamp = 1L,
+            accountId = "acc1",
+            balanceIncludedInAccount = true
+        )
+        assertEquals(100000L, AccountBalanceCalculator.calculateAccountBalancePaise(account, listOf(transaction)))
+    }
+
+    @Test
+    fun expenseNotIncludedInAccountBalanceIsDeductedExactlyOnce() {
+        val account = AccountEntity(id = "acc1", name = "SBI", openingBalancePaise = 100000L)
+        val transaction = TransactionEntity(
+            id = "not-included",
+            title = "Manual expense",
+            amount = 250.0,
+            type = "EXPENSE",
+            category = "FOOD",
+            date = "Today",
+            source = "MANUAL",
+            timestamp = 1L,
+            accountId = "acc1",
+            balanceIncludedInAccount = false
+        )
+        assertEquals(75000L, AccountBalanceCalculator.calculateAccountBalancePaise(account, listOf(transaction)))
+        assertEquals(75000L, AccountBalanceCalculator.calculateAccountBalancePaise(account, listOf(transaction)))
+    }
+
+    @Test
+    fun changingExpenseInclusionOrAccountRecalculatesWithoutMutatingAmount() {
+        val account1 = AccountEntity(id = "acc1", name = "SBI", openingBalancePaise = 100000L)
+        val account2 = AccountEntity(id = "acc2", name = "Cash", openingBalancePaise = 50000L)
+        val base = TransactionEntity("tx", "Expense", 250.0, "EXPENSE", "FOOD", "Today", "MANUAL", 1L, accountId = "acc1", balanceIncludedInAccount = false)
+        val included = base.copy(balanceIncludedInAccount = true)
+        val moved = included.copy(accountId = "acc2")
+
+        assertEquals(75000L, AccountBalanceCalculator.calculateAccountBalancePaise(account1, listOf(base)))
+        assertEquals(100000L, AccountBalanceCalculator.calculateAccountBalancePaise(account1, listOf(included)))
+        assertEquals(50000L, AccountBalanceCalculator.calculateAccountBalancePaise(account2, listOf(moved)))
+        assertEquals(250.0, moved.amount, 0.0)
+    }
+
+    @Test
     fun test7_transfersAreNotDoubleCounted() {
         val account = AccountEntity(id = "acc1", name = "SBI", openingBalancePaise = 100000L)
         val txs = listOf(

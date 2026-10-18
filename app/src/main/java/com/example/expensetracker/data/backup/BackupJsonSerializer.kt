@@ -101,6 +101,7 @@ object BackupJsonSerializer {
             obj.put("originalText", tx.originalText)
             obj.putOptOrNull("accountId", tx.accountId)
             obj.putOptOrNull("referenceNumber", tx.referenceNumber)
+            obj.putOptOrNull("balanceIncludedInAccount", tx.balanceIncludedInAccount)
             txArr.put(obj)
         }
         dataObj.put("transactions", txArr)
@@ -300,7 +301,7 @@ object BackupJsonSerializer {
 
         val exportedAt = root.optString("exportedAt")
         val appVersion = root.optString("appVersion", "1.0")
-        val databaseVersion = root.optInt("databaseVersion", 12)
+        val databaseVersion = root.optInt("databaseVersion", 13)
 
         val dataObj = root.optJSONObject("data") ?: throw BackupValidationException("Missing 'data' object in backup")
 
@@ -375,7 +376,8 @@ object BackupJsonSerializer {
                     timestamp = obj.getLong("timestamp"),
                     originalText = obj.optString("originalText", ""),
                     accountId = obj.getNullableString("accountId"),
-                    referenceNumber = obj.getNullableString("referenceNumber")
+                    referenceNumber = obj.getNullableString("referenceNumber"),
+                    balanceIncludedInAccount = if (obj.has("balanceIncludedInAccount") && !obj.isNull("balanceIncludedInAccount")) obj.getBoolean("balanceIncludedInAccount") else null
                 )
             )
         }
