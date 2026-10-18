@@ -9,6 +9,7 @@ import com.example.expensetracker.data.local.CategoryMappingEntity
 import com.example.expensetracker.data.local.toDomainModel
 import com.example.expensetracker.data.local.toEntity
 import com.example.expensetracker.model.Transaction
+import com.example.expensetracker.model.TransactionType
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -23,9 +24,17 @@ import com.example.expensetracker.service.DetectedRecurringCandidate
 import com.example.expensetracker.service.RecurringExpenseDetector
 
 import com.example.expensetracker.service.TransactionNotificationHelper
+import com.example.expensetracker.service.CategoryMapper
 import com.example.expensetracker.data.preferences.BalancePrivacyPreferences
 
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
+
+    data class CategoryLearningPreview(
+        val transaction: Transaction,
+        val oldCategory: String,
+        val newCategory: String,
+        val matchingTransactionCount: Int
+    )
 
     private val db = AppDatabase.getDatabase(application)
     private val transactionDao = db.transactionDao()
@@ -395,6 +404,61 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun updateTransaction(transaction: Transaction) {
         viewModelScope.launch(Dispatchers.IO) {
             transactionDao.updateTransaction(transaction.toEntity())
+        }
+    }
+
+    fun previewCategoryLearning(original: Transaction, updated: Transaction): CategoryLearningPreview? {
+        if (original.type != TransactionType.EXPENSE || updated.type != TransactionType.EXPENSE) return null
+        if (original.category == updated.category || updated.title.trim().isBlank()) return null
+        val normalizedTitle = updated.title.trim().lowercase()
+        val count = runBlocking(Dispatchers.IO) {
+            transactionDao.getAllTransactionsSync().count {
+                it.id != updated.id &&
+                        it.type.equals("EXPENSE", ignoreCase = true) &&
+                        it.title.trim().lowercase() == normalizedTitle
+            }
+        }
+        return CategoryLearningPreview(updated, original.category.name, updated.category.name, count)
+    }
+
+    fun updateTransactionOnly(transaction: Transaction) {
+        updateTransaction(transaction)
+    }
+
+    fun updateTransactionAndLearn(original: Transaction, updated: Transaction) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val escapedPattern = Regex.escape(updated.title.trim())
+            if (!CategoryMapper.isValidRegex("(?i)$escapedPattern")) {
+                transactionDao.updateTransaction(updated.toEntity())
+                return@launch
+            }
+            db.runInTransaction {
+                transactionDao.updateTransaction(updated.toEntity())
+                val matchingIds = transactionDao.getAllTransactionsSync()
+                    .filter {
+                        it.id != updated.id &&
+                                it.type.equals("EXPENSE", ignoreCase = true) &&
+                                it.title.trim().equals(updated.title.trim(), ignoreCase = true)
+                    }
+                    .map { it.id }
+                if (matchingIds.isNotEmpty()) {
+                    transactionDao.updateCategoryForTransactionIds(matchingIds, updated.category.name)
+                }
+                val pattern = "(?i)$escapedPattern"
+                val existing = categoryMappingDao.getMappingByPatternSync(pattern)
+                if (existing == null) {
+                    categoryMappingDao.insertMapping(
+                        CategoryMappingEntity(
+                            id = UUID.randomUUID().toString(),
+                            pattern = pattern,
+                            categoryName = updated.category.name,
+                            priority = 0
+                        )
+                    )
+                } else if (!existing.categoryName.equals(updated.category.name, ignoreCase = true)) {
+                    categoryMappingDao.updateMapping(existing.copy(categoryName = updated.category.name))
+                }
+            }
         }
     }
 

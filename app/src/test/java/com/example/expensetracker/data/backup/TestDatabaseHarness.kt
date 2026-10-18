@@ -224,6 +224,7 @@ class TestDatabaseHarness : AppDatabase() {
     override fun categoryMappingDao(): CategoryMappingDao = object : CategoryMappingDao {
         override fun getAllMappings(): Flow<List<CategoryMappingEntity>> = flowOf(categoryMappingsTable.toList())
         override fun getAllMappingsSync(): List<CategoryMappingEntity> = categoryMappingsTable.toList()
+        override fun getMappingByPatternSync(pattern: String): CategoryMappingEntity? = categoryMappingsTable.firstOrNull { it.pattern == pattern }
         override fun insertMapping(mapping: CategoryMappingEntity) {
             categoryMappingsTable.removeAll { it.id == mapping.id }
             categoryMappingsTable.add(mapping)
@@ -291,6 +292,17 @@ class TestDatabaseHarness : AppDatabase() {
                 if (transaction.id in transactionIds && (transaction.accountId == null || accountsTable.none { it.id == transaction.accountId })) {
                     updatedCount++
                     transaction.copy(accountId = accountId)
+                } else transaction
+            }
+            transactionsTable.clear(); transactionsTable.addAll(updated)
+            return updatedCount
+        }
+        override fun updateCategoryForTransactionIds(transactionIds: List<String>, newCategory: String): Int {
+            var updatedCount = 0
+            val updated = transactionsTable.map { transaction ->
+                if (transaction.id in transactionIds) {
+                    updatedCount++
+                    transaction.copy(category = newCategory)
                 } else transaction
             }
             transactionsTable.clear(); transactionsTable.addAll(updated)

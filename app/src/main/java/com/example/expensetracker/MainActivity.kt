@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,9 +32,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -145,6 +148,7 @@ fun ExpenseTrackerApp(
 
     var showAddSheet by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
+    var categoryLearningPreview by remember { mutableStateOf<TransactionViewModel.CategoryLearningPreview?>(null) }
     var reconciliationSuggestedTransaction by remember { mutableStateOf<Transaction?>(null) }
     var selectedDetailTransaction by remember { mutableStateOf<Transaction?>(null) }
     var showSplash by rememberSaveable { mutableStateOf(true) }
@@ -271,6 +275,7 @@ fun ExpenseTrackerApp(
                             onAddTransactionClick = { showAddSheet = true },
                             onAnalyticsClick = { currentScreen = Screen.Analytics },
                             onTransactionsClick = { currentScreen = Screen.Transactions },
+                            onViewAllExpenses = { currentScreen = Screen.Transactions },
                             onManagementClick = { currentScreen = Screen.Management },
                             onEditTransaction = { transaction -> editingTransaction = transaction },
                             onDeleteTransaction = { transaction -> viewModel.deleteTransaction(transaction) }
@@ -452,8 +457,43 @@ fun ExpenseTrackerApp(
                 defaultAccountId = primaryAccount?.id,
                 onDismiss = { editingTransaction = null },
                 onSave = { updatedTx ->
-                    viewModel.updateTransaction(updatedTx)
-                    editingTransaction = null
+                    val preview = viewModel.previewCategoryLearning(transaction, updatedTx)
+                    if (preview != null) {
+                        categoryLearningPreview = preview
+                    } else {
+                        viewModel.updateTransaction(updatedTx)
+                        editingTransaction = null
+                    }
+                }
+            )
+        }
+
+        categoryLearningPreview?.let { preview ->
+            AlertDialog(
+                onDismissRequest = { categoryLearningPreview = null },
+                title = { Text("Learn this category change?") },
+                text = {
+                    Text(
+                        "You changed '${preview.transaction.title}' from ${preview.oldCategory} to ${preview.newCategory}. " +
+                                "${preview.matchingTransactionCount} other matching expense(s) were found. Apply this category to them and future matching transactions?"
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.updateTransactionAndLearn(editingTransaction!!, preview.transaction)
+                        categoryLearningPreview = null
+                        editingTransaction = null
+                    }) { Text("Apply and save rule") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = {
+                            viewModel.updateTransactionOnly(preview.transaction)
+                            categoryLearningPreview = null
+                            editingTransaction = null
+                        }) { Text("Only this expense") }
+                        TextButton(onClick = { categoryLearningPreview = null }) { Text("Cancel") }
+                    }
                 }
             )
         }

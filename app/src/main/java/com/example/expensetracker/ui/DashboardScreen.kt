@@ -56,7 +56,8 @@ fun DashboardScreen(
     onTransactionsClick: () -> Unit = {},
     onManagementClick: () -> Unit = {},
     onEditTransaction: (Transaction) -> Unit = {},
-    onDeleteTransaction: (Transaction) -> Unit = {}
+    onDeleteTransaction: (Transaction) -> Unit = {},
+    onViewAllExpenses: () -> Unit = {}
 ) {
     val appColors = LocalAppColors.current
     var viewingDetailsTransaction by remember { mutableStateOf<Transaction?>(null) }
@@ -252,10 +253,21 @@ fun DashboardScreen(
                 TransactionItem(
                     transaction = transaction,
                     accountName = accountName,
-                    onCardClick = { viewingDetailsTransaction = transaction },
+                    onCardClick = {
+                        viewingDetailsTransaction = transaction
+                    },
                     onEditClick = { onEditTransaction(transaction) },
                     onDeleteClick = { onDeleteTransaction(transaction) }
                 )
+            }
+        }
+
+        if (recentList.isNotEmpty()) {
+            item {
+                TextButton(
+                    onClick = onViewAllExpenses,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("View all expenses") }
             }
         }
 

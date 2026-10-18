@@ -3,6 +3,7 @@ package com.example.expensetracker.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.filled.Share
@@ -57,6 +58,7 @@ fun TransactionItem(
     onLongClick: () -> Unit = {},
     onEditClick: () -> Unit = {},
     onDeleteClick: () -> Unit = {},
+    isSelected: Boolean = false,
     splitCount: Int = 0,
     accountName: String? = null,
     showBorder: Boolean = true,
@@ -67,6 +69,7 @@ fun TransactionItem(
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .then(if (isSelected) Modifier.border(2.dp, appColors.accent, RadiusMd) else Modifier)
             .combinedClickable(
                 onClick = { onCardClick() },
                 onLongClick = { onLongClick() }
