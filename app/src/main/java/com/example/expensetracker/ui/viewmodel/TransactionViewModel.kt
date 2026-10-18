@@ -646,4 +646,69 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             repaymentDao.deleteRepaymentById(repaymentId)
         }
     }
+
+    val backupManager = com.example.expensetracker.data.backup.BackupManager(db)
+
+    private val _backupExportState = kotlinx.coroutines.flow.MutableStateFlow<com.example.expensetracker.data.backup.BackupExportState>(
+        com.example.expensetracker.data.backup.BackupExportState.Idle
+    )
+    val backupExportState: StateFlow<com.example.expensetracker.data.backup.BackupExportState> = _backupExportState
+
+    fun resetBackupExportState() {
+        _backupExportState.value = com.example.expensetracker.data.backup.BackupExportState.Idle
+    }
+
+    fun exportBackupToUri(uri: android.net.Uri) {
+        viewModelScope.launch {
+            _backupExportState.value = com.example.expensetracker.data.backup.BackupExportState.Loading
+            try {
+                val backup = backupManager.createBackupSnapshot(appVersion = "1.0")
+                val result = backupManager.exportToUri(getApplication(), uri, backup)
+                if (result.isSuccess) {
+                    val summary = "Successfully exported ${backup.metadata.totalTransactions} transactions, ${backup.metadata.totalAccounts} accounts, ${backup.metadata.totalCategories} categories."
+                    _backupExportState.value = com.example.expensetracker.data.backup.BackupExportState.Success(
+                        message = "Backup saved successfully",
+                        details = summary
+                    )
+                } else {
+                    _backupExportState.value = com.example.expensetracker.data.backup.BackupExportState.Error(
+                        result.exceptionOrNull()?.localizedMessage ?: "Failed to write backup file"
+                    )
+                }
+            } catch (e: Exception) {
+                _backupExportState.value = com.example.expensetracker.data.backup.BackupExportState.Error(
+                    e.localizedMessage ?: "Error during backup creation"
+                )
+            }
+        }
+    }
+
+    fun exportBackupForShare(onReadyToShare: (android.content.Intent) -> Unit) {
+        viewModelScope.launch {
+            _backupExportState.value = com.example.expensetracker.data.backup.BackupExportState.Loading
+            try {
+                val backup = backupManager.createBackupSnapshot(appVersion = "1.0")
+                val result = backupManager.exportToCacheFile(getApplication(), backup)
+                if (result.isSuccess) {
+                    val file = result.getOrThrow()
+                    val intent = backupManager.createShareIntent(getApplication(), file)
+                    val summary = "Created backup package with ${backup.metadata.totalTransactions} transactions and ${backup.metadata.totalAccounts} accounts."
+                    _backupExportState.value = com.example.expensetracker.data.backup.BackupExportState.Success(
+                        message = "Backup file ready to share",
+                        details = summary
+                    )
+                    onReadyToShare(intent)
+                } else {
+                    _backupExportState.value = com.example.expensetracker.data.backup.BackupExportState.Error(
+                        result.exceptionOrNull()?.localizedMessage ?: "Failed to generate backup file"
+                    )
+                }
+            } catch (e: Exception) {
+                _backupExportState.value = com.example.expensetracker.data.backup.BackupExportState.Error(
+                    e.localizedMessage ?: "Error preparing backup share"
+                )
+            }
+        }
+    }
 }
+

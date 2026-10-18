@@ -92,6 +92,11 @@ fun ManagementScreen(
     reconciliationResults: Map<String, com.example.expensetracker.model.ReconciliationResult> = emptyMap(),
     onResolveObservation: (observationId: String, accountId: String, rememberMapping: Boolean) -> Unit = { _, _, _ -> },
     onDeleteObservation: (observationId: String) -> Unit = {},
+    totalTransactionCount: Int = 0,
+    backupExportState: com.example.expensetracker.data.backup.BackupExportState = com.example.expensetracker.data.backup.BackupExportState.Idle,
+    onExportBackupToUri: (android.net.Uri) -> Unit = {},
+    onShareBackup: (((android.content.Intent) -> Unit) -> Unit) = {},
+    onDismissBackupState: () -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     var selectedTabIndex by remember(initialSelectedTab) { mutableIntStateOf(initialSelectedTab) }
@@ -273,6 +278,30 @@ fun ManagementScreen(
                             }
                         }
                     }
+
+                    Box(
+                        modifier = Modifier
+                            .clickable { selectedTabIndex = 5 }
+                            .padding(bottom = 8.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "Backup & Export",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (selectedTabIndex == 5) appColors.ink else appColors.inkFaint
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (selectedTabIndex == 5) {
+                                Box(
+                                    modifier = Modifier
+                                        .height(2.dp)
+                                        .width(90.dp)
+                                        .background(appColors.accent, RoundedCornerShape(1.dp))
+                                )
+                            }
+                        }
+                    }
                 }
 
                 when (selectedTabIndex) {
@@ -316,6 +345,17 @@ fun ManagementScreen(
                         onAssignUnassignedClick = onAssignUnassignedTransactions,
                         onResolveObservation = onResolveObservation,
                         onDeleteObservation = onDeleteObservation
+                    )
+                    5 -> com.example.expensetracker.ui.components.BackupTabContent(
+                        totalTransactions = totalTransactionCount,
+                        totalAccounts = accountsWithBalances.size,
+                        totalCategories = categories.size,
+                        totalSplitGroups = splitGroups.size,
+                        totalTemplates = paymentTemplates.size,
+                        backupExportState = backupExportState,
+                        onExportToUri = onExportBackupToUri,
+                        onShareBackup = onShareBackup,
+                        onDismissState = onDismissBackupState
                     )
                 }
             }
