@@ -47,6 +47,10 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
 
             val packageName = sbn.packageName ?: "Unknown"
             val notification = sbn.notification
+            if (notification != null && (notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0) {
+                Log.d(TAG, "Ignoring group summary notification from $packageName")
+                return
+            }
             val extras = notification?.extras
 
             val notifId = sbn.id
@@ -137,12 +141,71 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
                     db.testNotificationDao().insert(testEntity)
                     db.testNotificationDao().pruneOldRecords()
 
+                    val rawText = if (isGmail && bodyText.isNotBlank()) bodyText else "${title ?: ""} ${text ?: ""}".trim()
+
+                    // 1. Account Identification
+                    val effectiveSuffix = detectionResult.accountNumber ?: parsedTransaction?.accountSuffix ?: NotificationParser.extractAccountSuffix(rawText)
+                    val accounts = db.accountDao().getAllAccountsSync()
+                    val confirmedMappings = db.sourceAccountMappingDao().getConfirmedMappingsSync()
+                    val sourceStr = parsedTransaction?.source ?: packageName
+                    val matchResult = com.example.expensetracker.model.AccountIdentifier.identifyAccount(
+                        extractedSuffix = effectiveSuffix,
+                        source = sourceStr,
+                        senderOrPackage = packageName,
+                        rawContent = rawText,
+                        accounts = accounts,
+                        confirmedMappings = confirmedMappings
+                    )
+                    val identifiedAccountId = matchResult.accountId
+                    Log.d(TAG, "ACCOUNT_IDENTIFIER_RESULT: $matchResult -> identifiedAccountId=$identifiedAccountId")
+
+                    // 2. Balance Observation Recording
+                    val observedBalance = detectionResult.balance ?: parsedTransaction?.balance ?: NotificationParser.extractBalance(rawText)
+                    if (observedBalance != null && observedBalance >= 0) {
+                        val ref = parsedTransaction?.referenceNumber ?: NotificationParser.extractReferenceNumber(rawText)
+                        val balancePaise = Math.round(observedBalance * 100.0)
+
+                        val isDuplicateObservation = if (!ref.isNullOrBlank()) {
+                            db.balanceObservationDao().findDuplicateByReferenceSync(ref, balancePaise) != null
+                        } else {
+                            val windowStart = postTime - 2 * 60 * 1000L
+                            val windowEnd = postTime + 2 * 60 * 1000L
+                            db.balanceObservationDao().findDuplicateByTimestampSync(sourceStr, balancePaise, windowStart, windowEnd) != null
+                        }
+
+                        if (!isDuplicateObservation) {
+                            val observation = com.example.expensetracker.data.local.BalanceObservationEntity(
+                                id = java.util.UUID.randomUUID().toString(),
+                                accountId = identifiedAccountId,
+                                accountSuffix = effectiveSuffix,
+                                balancePaise = balancePaise,
+                                balanceType = "AVAILABLE",
+                                currency = "INR",
+                                timestamp = postTime,
+                                source = sourceStr,
+                                senderOrPackage = packageName,
+                                referenceNumber = ref,
+                                rawText = rawText,
+                                isResolved = identifiedAccountId != null,
+                                isReconciled = false
+                            )
+                            db.balanceObservationDao().insert(observation)
+                            Log.d(TAG, "BALANCE_OBSERVATION_SAVED: id=${observation.id} accountId=$identifiedAccountId balance=₹$observedBalance resolved=${observation.isResolved}")
+                        } else {
+                            Log.d(TAG, "BALANCE_OBSERVATION_SKIPPED: Duplicate observation for ref=$ref / balance=₹$observedBalance")
+                        }
+                    }
+
+                    // 3. Process Transaction if detected
                     if (parsedTransaction != null) {
                         Log.d(TAG, "PARSE_RESULT (${detectionResult.detectionMethod}): amount=${parsedTransaction.amount} type=${parsedTransaction.type} name=${parsedTransaction.name} source=${parsedTransaction.source}")
 
-                        val rawText = if (isGmail && bodyText.isNotBlank()) bodyText else "${title ?: ""} ${text ?: ""}".trim()
-                        val normalizedTransaction = TransactionNormalizer.normalize(parsedTransaction, rawText)
-                        Log.d(TAG, "NORMALIZE_RESULT: amount=${normalizedTransaction.amount} type=${normalizedTransaction.type} name=${normalizedTransaction.name} source=${normalizedTransaction.source}")
+                        val normalizedTransaction = TransactionNormalizer.normalize(
+                            parsed = parsedTransaction,
+                            rawText = rawText,
+                            accountId = identifiedAccountId
+                        )
+                        Log.d(TAG, "NORMALIZE_RESULT: amount=${normalizedTransaction.amount} type=${normalizedTransaction.type} name=${normalizedTransaction.name} source=${normalizedTransaction.source} accountId=${normalizedTransaction.accountId}")
 
                         val mappings = db.categoryMappingDao().getAllMappingsSync()
                         val mappedCategory = CategoryMapper.matchCategory(rawText, mappings)

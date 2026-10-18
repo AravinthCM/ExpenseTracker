@@ -10,7 +10,10 @@ import com.example.expensetracker.model.TransactionType
 
 @Entity(
     tableName = "transactions",
-    indices = [Index(value = ["accountId"])]
+    indices = [
+        Index(value = ["accountId"]),
+        Index(value = ["referenceNumber"], unique = true)
+    ]
 )
 data class TransactionEntity(
     @PrimaryKey
@@ -23,7 +26,8 @@ data class TransactionEntity(
     val source: String,
     val timestamp: Long,
     val originalText: String = "",
-    val accountId: String? = null
+    val accountId: String? = null,
+    val referenceNumber: String? = null
 )
 
 fun TransactionEntity.toDomainModel(): Transaction {
@@ -55,7 +59,8 @@ fun TransactionEntity.toDomainModel(): Transaction {
         source = transactionSource,
         timestamp = timestamp,
         originalText = originalText,
-        accountId = accountId
+        accountId = accountId,
+        referenceNumber = referenceNumber
     )
 }
 
@@ -70,6 +75,7 @@ fun Transaction.toEntity(): TransactionEntity {
         source = source.name,
         timestamp = timestamp,
         originalText = originalText,
-        accountId = accountId
+        accountId = accountId,
+        referenceNumber = referenceNumber
     )
 }

@@ -38,6 +38,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val expenseSplitDao = db.expenseSplitDao()
     private val repaymentDao = db.repaymentDao()
     private val accountDao = db.accountDao()
+    private val balanceObservationDao = db.balanceObservationDao()
+    private val sourceAccountMappingDao = db.sourceAccountMappingDao()
 
     val accountsState: StateFlow<List<com.example.expensetracker.data.local.AccountEntity>> = accountDao.getAllAccounts()
         .stateIn(
@@ -67,6 +69,47 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
+    )
+
+    val unresolvedObservationsState: StateFlow<List<com.example.expensetracker.data.local.BalanceObservationEntity>> = balanceObservationDao.getUnresolvedObservations()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val allObservationsState: StateFlow<List<com.example.expensetracker.data.local.BalanceObservationEntity>> = balanceObservationDao.getAllObservations()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val sourceAccountMappingsState: StateFlow<List<com.example.expensetracker.data.local.SourceAccountMappingEntity>> = sourceAccountMappingDao.getAllMappings()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val reconciliationResultsState: StateFlow<Map<String, com.example.expensetracker.model.ReconciliationResult>> = kotlinx.coroutines.flow.combine(
+        accountsState,
+        transactionDao.getAllTransactions(),
+        balanceObservationDao.getAllObservations()
+    ) { accounts: List<com.example.expensetracker.data.local.AccountEntity>,
+        txEntities: List<com.example.expensetracker.data.local.TransactionEntity>,
+        observations: List<com.example.expensetracker.data.local.BalanceObservationEntity> ->
+        accounts.associate { account ->
+            account.id to com.example.expensetracker.model.BalanceReconciliationEngine.reconcileAccount(
+                account = account,
+                transactions = txEntities,
+                observations = observations
+            )
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyMap()
     )
 
     private val _selectedAccountId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
@@ -159,7 +202,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         id: String?,
         name: String,
         openingBalancePaise: Long,
-        isPrimary: Boolean
+        isPrimary: Boolean,
+        accountNumber: String? = null
     ): String? = runBlocking(Dispatchers.IO) {
         val trimmed = name.trim()
         if (trimmed.isBlank()) return@runBlocking "Account name cannot be empty."
@@ -183,7 +227,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             isPrimary = isPrimary,
             isArchived = existingAccount?.isArchived ?: false,
             createdAt = existingAccount?.createdAt ?: now,
-            updatedAt = now
+            updatedAt = now,
+            accountNumber = accountNumber?.trim()?.takeIf { it.isNotBlank() }
         )
 
         if (existingAccount == null) {
@@ -198,6 +243,61 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             accountDao.setPrimaryAccount(targetId)
         }
         return@runBlocking null
+    }
+
+    // --- Observation & Mapping Operations ---
+    fun resolveObservation(observationId: String, accountId: String, rememberMapping: Boolean = false) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val obs = balanceObservationDao.getObservationById(observationId) ?: return@launch
+            balanceObservationDao.resolveObservation(observationId, accountId)
+
+            if (rememberMapping && !obs.source.isBlank()) {
+                val mapping = com.example.expensetracker.data.local.SourceAccountMappingEntity(
+                    id = UUID.randomUUID().toString(),
+                    accountId = accountId,
+                    sourcePattern = obs.source,
+                    senderOrPackage = obs.senderOrPackage,
+                    matchingContext = obs.accountSuffix,
+                    isConfirmed = true
+                )
+                sourceAccountMappingDao.insert(mapping)
+            }
+        }
+    }
+
+    fun deleteObservation(observationId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            balanceObservationDao.deleteById(observationId)
+        }
+    }
+
+    fun saveSourceAccountMapping(
+        id: String?,
+        accountId: String,
+        sourcePattern: String,
+        senderOrPackage: String?,
+        matchingContext: String?,
+        isConfirmed: Boolean = true
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val targetId = if (!id.isNullOrBlank()) id else UUID.randomUUID().toString()
+            val mapping = com.example.expensetracker.data.local.SourceAccountMappingEntity(
+                id = targetId,
+                accountId = accountId,
+                sourcePattern = sourcePattern.trim(),
+                senderOrPackage = senderOrPackage?.trim()?.takeIf { it.isNotBlank() },
+                matchingContext = matchingContext?.trim()?.takeIf { it.isNotBlank() },
+                isConfirmed = isConfirmed,
+                updatedAt = System.currentTimeMillis()
+            )
+            sourceAccountMappingDao.insert(mapping)
+        }
+    }
+
+    fun deleteSourceAccountMapping(mappingId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            sourceAccountMappingDao.deleteById(mappingId)
+        }
     }
 
     fun setPrimaryAccount(accountId: String) {

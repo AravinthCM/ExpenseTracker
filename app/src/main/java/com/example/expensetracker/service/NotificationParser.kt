@@ -56,6 +56,43 @@ object NotificationParser {
         option = RegexOption.IGNORE_CASE
     )
 
+    private val referenceRegex = Regex(
+        pattern = """(?:UPI\s+Ref(?:\s+No\.?)?[:\s]*|UPI[:\s]+|Ref(?:\s+No\.?)?[:\s]*|RRN[:\s]*|Txn(?:\s+ID)?[:\s]*)([A-Za-z0-9]+)""",
+        option = RegexOption.IGNORE_CASE
+    )
+
+    private val accountSuffixRegex = Regex(
+        pattern = """(?:account|acct|a/c|acc\.?)\s*(?:no\.?|number)?\s*(?:ending\s+(?:with\s+)?)?[:\s]*([X\*\d\w]+)""",
+        option = RegexOption.IGNORE_CASE
+    )
+
+    private val endingSuffixRegex = Regex(
+        pattern = """(?:ending\s+(?:in|with)\s+|ends\s+with\s+)([X\*\d\w]+)""",
+        option = RegexOption.IGNORE_CASE
+    )
+
+    private val balanceRegex = Regex(
+        pattern = """(?:(?:total\s+)?available\s+bal(?:ance)?|avail\s+bal(?:ance)?|\bbal(?:ance)?)\s*(?:is|:)?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)""",
+        option = RegexOption.IGNORE_CASE
+    )
+
+    fun extractReferenceNumber(text: String): String? {
+        val match = referenceRegex.find(text)
+        return match?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
+    }
+
+    fun extractAccountSuffix(text: String): String? {
+        val match = accountSuffixRegex.find(text) ?: endingSuffixRegex.find(text)
+        val rawSuffix = match?.groupValues?.get(1)?.trim()
+        return com.example.expensetracker.model.AccountIdentifier.cleanSuffix(rawSuffix)
+    }
+
+    fun extractBalance(text: String): Double? {
+        val match = balanceRegex.find(text) ?: return null
+        val raw = match.groupValues[1].replace(",", "").trim()
+        return raw.toDoubleOrNull()
+    }
+
     fun parse(
         packageName: String,
         title: String,
@@ -76,6 +113,9 @@ object NotificationParser {
     private fun parseGmail(title: String, text: String, postTime: Long): ParsedTransaction? {
         val fullContent = if (text.isNotBlank()) text else title
         if (fullContent.isBlank()) return null
+        val refNumber = extractReferenceNumber(fullContent)
+        val accSuffix = extractAccountSuffix(fullContent)
+        val balance = extractBalance(fullContent)
 
         // 1. Check for Canara / Bank Debit
         val debitMatch = canaraDebitRegex.find(fullContent)
@@ -94,7 +134,10 @@ object NotificationParser {
                     name = finalName,
                     type = TransactionType.EXPENSE,
                     source = TransactionSource.BANK_EMAIL.name,
-                    timestamp = postTime
+                    timestamp = postTime,
+                    referenceNumber = refNumber,
+                    accountSuffix = accSuffix,
+                    balance = balance
                 )
             }
         }
@@ -112,7 +155,10 @@ object NotificationParser {
                     name = finalName,
                     type = TransactionType.EXPENSE,
                     source = TransactionSource.BANK_EMAIL.name,
-                    timestamp = postTime
+                    timestamp = postTime,
+                    referenceNumber = refNumber,
+                    accountSuffix = accSuffix,
+                    balance = balance
                 )
             }
         }
@@ -134,7 +180,10 @@ object NotificationParser {
                     name = finalName,
                     type = TransactionType.INCOME,
                     source = TransactionSource.BANK_EMAIL.name,
-                    timestamp = postTime
+                    timestamp = postTime,
+                    referenceNumber = refNumber,
+                    accountSuffix = accSuffix,
+                    balance = balance
                 )
             }
         }
@@ -152,7 +201,10 @@ object NotificationParser {
                     name = finalName,
                     type = TransactionType.INCOME,
                     source = TransactionSource.BANK_EMAIL.name,
-                    timestamp = postTime
+                    timestamp = postTime,
+                    referenceNumber = refNumber,
+                    accountSuffix = accSuffix,
+                    balance = balance
                 )
             }
         }
@@ -175,6 +227,7 @@ object NotificationParser {
 
         for (candidate in candidates) {
             if (candidate.isBlank()) continue
+            val refNumber = extractReferenceNumber(candidate)
 
             // 1. Try GPay Income
             val incomeMatch = gpayIncomeRegex.find(candidate)
@@ -188,7 +241,8 @@ object NotificationParser {
                         name = name,
                         type = TransactionType.INCOME,
                         source = TransactionSource.GPAY.name,
-                        timestamp = postTime
+                        timestamp = postTime,
+                        referenceNumber = refNumber
                     )
                 }
             }
@@ -205,7 +259,8 @@ object NotificationParser {
                         name = name,
                         type = TransactionType.EXPENSE,
                         source = TransactionSource.GPAY.name,
-                        timestamp = postTime
+                        timestamp = postTime,
+                        referenceNumber = refNumber
                     )
                 }
             }
@@ -222,6 +277,9 @@ object NotificationParser {
     private fun parseBankSms(title: String, text: String, postTime: Long): ParsedTransaction? {
         val fullContent = "$title $text".trim()
         if (fullContent.isBlank()) return null
+        val refNumber = extractReferenceNumber(fullContent)
+        val accSuffix = extractAccountSuffix(fullContent)
+        val balance = extractBalance(fullContent)
 
         // 1. Check for Bank Debit match
         val debitMatch = bankDebitRegex.find(fullContent)
@@ -246,7 +304,10 @@ object NotificationParser {
                     name = finalName,
                     type = TransactionType.EXPENSE,
                     source = TransactionSource.BANK_SMS.name,
-                    timestamp = postTime
+                    timestamp = postTime,
+                    referenceNumber = refNumber,
+                    accountSuffix = accSuffix,
+                    balance = balance
                 )
             }
         }
@@ -271,7 +332,10 @@ object NotificationParser {
                     name = finalName,
                     type = TransactionType.TRANSFER,
                     source = TransactionSource.BANK_SMS.name,
-                    timestamp = postTime
+                    timestamp = postTime,
+                    referenceNumber = refNumber,
+                    accountSuffix = accSuffix,
+                    balance = balance
                 )
             }
         }

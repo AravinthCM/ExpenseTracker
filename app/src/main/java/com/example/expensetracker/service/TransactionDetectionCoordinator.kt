@@ -46,7 +46,8 @@ object TransactionDetectionCoordinator {
                     name = merchantName,
                     type = txType,
                     source = "TEMPLATE:${templateResult.templateName ?: "Custom"}",
-                    timestamp = postTime
+                    timestamp = postTime,
+                    referenceNumber = templateResult.reference
                 )
 
                 return DetectionResult(
@@ -82,6 +83,9 @@ object TransactionDetectionCoordinator {
                 parsedTransaction = genericResult.parsedTransaction,
                 amount = genericResult.parsedTransaction.amount,
                 merchant = genericResult.parsedTransaction.name,
+                accountNumber = genericResult.parsedTransaction.accountSuffix,
+                referenceNumber = genericResult.parsedTransaction.referenceNumber,
+                balance = genericResult.parsedTransaction.balance,
                 transactionType = genericResult.parsedTransaction.type.name
             )
         } else {

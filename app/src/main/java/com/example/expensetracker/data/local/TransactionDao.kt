@@ -24,8 +24,11 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE id = :id")
     fun getTransactionByIdSync(id: String): TransactionEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun insertTransaction(transaction: TransactionEntity)
+    @Query("SELECT * FROM transactions WHERE referenceNumber = :referenceNumber LIMIT 1")
+    fun getTransactionByReferenceSync(referenceNumber: String): TransactionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insertTransaction(transaction: TransactionEntity): Long
 
     @Update
     fun updateTransaction(transaction: TransactionEntity)

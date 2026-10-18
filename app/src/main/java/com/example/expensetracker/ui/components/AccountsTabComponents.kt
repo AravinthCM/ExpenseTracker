@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,7 +52,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.expensetracker.data.local.AccountEntity
+import com.example.expensetracker.data.local.BalanceObservationEntity
 import com.example.expensetracker.model.AccountWithBalance
+import com.example.expensetracker.model.ReconciliationResult
 import com.example.expensetracker.ui.theme.LocalAppColors
 import com.example.expensetracker.ui.util.CurrencyFormatter
 import kotlin.math.roundToLong
@@ -59,14 +63,35 @@ import kotlin.math.roundToLong
 fun AccountsTabContent(
     accountsWithBalances: List<AccountWithBalance>,
     unassignedCount: Int,
+    unresolvedObservations: List<BalanceObservationEntity> = emptyList(),
+    reconciliationResults: Map<String, ReconciliationResult> = emptyMap(),
     onAddAccountClick: () -> Unit,
     onEditAccountClick: (AccountEntity) -> Unit,
     onSetPrimaryAccountClick: (String) -> Unit,
     onToggleArchivedClick: (AccountEntity) -> Unit,
     onDeleteAccountClick: (AccountEntity) -> Unit,
-    onAssignUnassignedClick: (String) -> Unit
+    onAssignUnassignedClick: (String) -> Unit,
+    onResolveObservation: (observationId: String, accountId: String, rememberMapping: Boolean) -> Unit = { _, _, _ -> },
+    onDeleteObservation: (observationId: String) -> Unit = {}
 ) {
     val appColors = LocalAppColors.current
+    var reviewingObservation by remember { mutableStateOf<BalanceObservationEntity?>(null) }
+
+    if (reviewingObservation != null) {
+        AssignObservationAccountDialog(
+            observation = reviewingObservation!!,
+            accounts = accountsWithBalances.map { it.account },
+            onDismiss = { reviewingObservation = null },
+            onConfirm = { accountId, rememberMapping ->
+                onResolveObservation(reviewingObservation!!.id, accountId, rememberMapping)
+                reviewingObservation = null
+            },
+            onDelete = {
+                onDeleteObservation(reviewingObservation!!.id)
+                reviewingObservation = null
+            }
+        )
+    }
 
     val primaryAccount = accountsWithBalances.find { it.account.isPrimary && !it.account.isArchived }
 
@@ -75,6 +100,80 @@ fun AccountsTabContent(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Unresolved Observations Review Banner
+        if (unresolvedObservations.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = appColors.negativeSoft)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = appColors.negative, modifier = Modifier.size(16.dp))
+                            Text(
+                                text = "Unresolved Balance Observations (${unresolvedObservations.size})",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                                color = appColors.negative
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Bank balance alerts whose account could not be safely identified. Review and assign them to an account.",
+                            fontSize = 12.sp,
+                            color = appColors.inkMuted
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        unresolvedObservations.forEach { obs ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(appColors.surface)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "₹${CurrencyFormatter.format(obs.balancePaise / 100.0)} • ${obs.source}",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = appColors.ink
+                                    )
+                                    if (!obs.accountSuffix.isNullOrBlank()) {
+                                        Text(
+                                            text = "Account suffix: ${obs.accountSuffix}",
+                                            fontSize = 11.5.sp,
+                                            color = appColors.accent
+                                        )
+                                    }
+                                }
+                                Button(
+                                    onClick = { reviewingObservation = obs },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = appColors.accent,
+                                        contentColor = appColors.accentInk
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Assign", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    }
+                }
+            }
+        }
+
         // Banner for Unassigned Transactions if any
         if (unassignedCount > 0) {
             item {
@@ -151,6 +250,7 @@ fun AccountsTabContent(
             ) { item ->
                 AccountCardItem(
                     accountWithBalance = item,
+                    reconciliationResult = reconciliationResults[item.account.id],
                     onEditClick = { onEditAccountClick(item.account) },
                     onSetPrimaryClick = { onSetPrimaryAccountClick(item.account.id) },
                     onToggleArchivedClick = { onToggleArchivedClick(item.account) },
@@ -165,6 +265,7 @@ fun AccountsTabContent(
 @Composable
 fun AccountCardItem(
     accountWithBalance: AccountWithBalance,
+    reconciliationResult: ReconciliationResult? = null,
     onEditClick: () -> Unit,
     onSetPrimaryClick: () -> Unit,
     onToggleArchivedClick: () -> Unit,
@@ -193,14 +294,26 @@ fun AccountCardItem(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        text = account.name,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        ),
-                        color = if (account.isArchived) appColors.inkFaint else appColors.ink
-                    )
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = account.name,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                ),
+                                color = if (account.isArchived) appColors.inkFaint else appColors.ink
+                            )
+                            if (!account.accountNumber.isNullOrBlank()) {
+                                Text(
+                                    text = "••••${account.accountNumber}",
+                                    fontSize = 12.sp,
+                                    color = appColors.inkMuted,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
 
                     if (account.isPrimary) {
                         Box(
@@ -274,6 +387,46 @@ fun AccountCardItem(
                 }
             }
 
+            // Reconciliation Status Badge
+            if (reconciliationResult?.latestObservation != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                if (reconciliationResult.isReconciled) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(appColors.positiveSoft)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = appColors.positive, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Reconciled with bank (₹${CurrencyFormatter.format(reconciliationResult.observedBalanceDouble ?: 0.0)})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = appColors.positive
+                        )
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(appColors.negativeSoft)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = appColors.negative, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = reconciliationResult.statusMessage,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = appColors.negative
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(
@@ -311,11 +464,12 @@ fun AccountCardItem(
 fun AddOrEditAccountDialog(
     initialAccount: AccountEntity? = null,
     onDismiss: () -> Unit,
-    onSave: (id: String?, name: String, openingBalancePaise: Long, isPrimary: Boolean) -> String?
+    onSave: (id: String?, name: String, openingBalancePaise: Long, isPrimary: Boolean, accountNumber: String?) -> String?
 ) {
     val appColors = LocalAppColors.current
 
     var nameText by remember { mutableStateOf(initialAccount?.name ?: "") }
+    var accountNumberText by remember { mutableStateOf(initialAccount?.accountNumber ?: "") }
     var balanceText by remember { mutableStateOf(initialAccount?.let { (it.openingBalancePaise / 100.0).toString() } ?: "0") }
     var isPrimary by remember { mutableStateOf(initialAccount?.isPrimary ?: false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -343,6 +497,17 @@ fun AddOrEditAccountDialog(
                     label = { Text("Account Name (e.g., Canara Bank, SBI, Cash)") },
                     singleLine = true,
                     isError = errorMessage != null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = accountNumberText,
+                    onValueChange = {
+                        accountNumberText = it
+                        errorMessage = null
+                    },
+                    label = { Text("Account Number / Suffix (optional, e.g. 528)") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -395,7 +560,7 @@ fun AddOrEditAccountDialog(
                     }
 
                     val paise = (parsedBalanceDouble * 100.0).roundToLong()
-                    val error = onSave(initialAccount?.id, nameText, paise, isPrimary)
+                    val error = onSave(initialAccount?.id, nameText, paise, isPrimary, accountNumberText.trim().takeIf { it.isNotBlank() })
                     if (error != null) {
                         errorMessage = error
                     } else {
@@ -409,6 +574,112 @@ fun AddOrEditAccountDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel", color = appColors.inkMuted)
+            }
+        },
+        containerColor = appColors.surface,
+        shape = RoundedCornerShape(18.dp)
+    )
+}
+
+@Composable
+fun AssignObservationAccountDialog(
+    observation: BalanceObservationEntity,
+    accounts: List<AccountEntity>,
+    onDismiss: () -> Unit,
+    onConfirm: (accountId: String, rememberMapping: Boolean) -> Unit,
+    onDelete: () -> Unit
+) {
+    val appColors = LocalAppColors.current
+    val activeAccounts = accounts.filter { !it.isArchived }
+    var selectedAccountId by remember { mutableStateOf(activeAccounts.firstOrNull()?.id ?: "") }
+    var rememberMapping by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = "Assign Account to Observation", fontWeight = FontWeight.Bold, color = appColors.ink)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Bank balance of ₹${CurrencyFormatter.format(observation.balancePaise / 100.0)} was observed, but the account could not be automatically identified.",
+                    fontSize = 12.5.sp,
+                    color = appColors.inkMuted
+                )
+                if (!observation.accountSuffix.isNullOrBlank()) {
+                    Text(
+                        text = "Extracted Suffix: ${observation.accountSuffix}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = appColors.accent
+                    )
+                }
+                Text(
+                    text = "Source: ${observation.source}${observation.senderOrPackage?.let { " ($it)" } ?: ""}",
+                    fontSize = 11.5.sp,
+                    color = appColors.inkFaint
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(text = "Select Account:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = appColors.ink)
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    activeAccounts.forEach { acc ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedAccountId = acc.id }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            RadioButton(
+                                selected = selectedAccountId == acc.id,
+                                onClick = { selectedAccountId = acc.id }
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = acc.name + (acc.accountNumber?.let { " (••••$it)" } ?: ""), fontSize = 13.sp, color = appColors.ink)
+                        }
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { rememberMapping = !rememberMapping }
+                        .padding(top = 6.dp)
+                ) {
+                    Checkbox(checked = rememberMapping, onCheckedChange = { rememberMapping = it })
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = "Remember mapping for this source pattern", fontSize = 11.5.sp, color = appColors.ink)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (selectedAccountId.isNotBlank()) {
+                        onConfirm(selectedAccountId, rememberMapping)
+                        onDismiss()
+                    }
+                },
+                enabled = selectedAccountId.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = appColors.accent, contentColor = appColors.accentInk)
+            ) {
+                Text("Assign & Resolve", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = {
+                    onDelete()
+                    onDismiss()
+                }) {
+                    Text("Dismiss", color = appColors.negative)
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel", color = appColors.inkMuted)
+                }
             }
         },
         containerColor = appColors.surface,

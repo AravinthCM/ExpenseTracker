@@ -8,5 +8,7 @@ data class NormalizedTransaction(
     val type: TransactionType,
     val source: String,
     val timestamp: Long,
-    val originalText: String
+    val originalText: String,
+    val referenceNumber: String? = null,
+    val accountId: String? = null
 )

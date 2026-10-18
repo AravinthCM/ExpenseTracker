@@ -83,11 +83,15 @@ fun ManagementScreen(
     onDeletePaymentTemplate: (com.example.expensetracker.data.local.PaymentTemplateEntity) -> Unit = {},
     onSaveSplitGroup: (groupId: String?, name: String, members: List<com.example.expensetracker.model.DraftMember>) -> com.example.expensetracker.model.ValidationResult = { _, _, _ -> com.example.expensetracker.model.ValidationResult(false) },
     onDeleteSplitGroup: (com.example.expensetracker.data.local.SplitGroupEntity) -> Unit = {},
-    onSaveAccount: (id: String?, name: String, openingBalancePaise: Long, isPrimary: Boolean) -> String? = { _, _, _, _ -> null },
+    onSaveAccount: (id: String?, name: String, openingBalancePaise: Long, isPrimary: Boolean, accountNumber: String?) -> String? = { _, _, _, _, _ -> null },
     onSetPrimaryAccount: (accountId: String) -> Unit = {},
     onSetAccountArchived: (accountId: String, isArchived: Boolean) -> Unit = { _, _ -> },
     onDeleteAccount: (com.example.expensetracker.data.local.AccountEntity) -> Unit = {},
     onAssignUnassignedTransactions: (accountId: String) -> Unit = {},
+    unresolvedObservations: List<com.example.expensetracker.data.local.BalanceObservationEntity> = emptyList(),
+    reconciliationResults: Map<String, com.example.expensetracker.model.ReconciliationResult> = emptyMap(),
+    onResolveObservation: (observationId: String, accountId: String, rememberMapping: Boolean) -> Unit = { _, _, _ -> },
+    onDeleteObservation: (observationId: String) -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     var selectedTabIndex by remember(initialSelectedTab) { mutableIntStateOf(initialSelectedTab) }
@@ -302,12 +306,16 @@ fun ManagementScreen(
                     4 -> com.example.expensetracker.ui.components.AccountsTabContent(
                         accountsWithBalances = accountsWithBalances,
                         unassignedCount = unassignedTransactionCount,
+                        unresolvedObservations = unresolvedObservations,
+                        reconciliationResults = reconciliationResults,
                         onAddAccountClick = { showAddAccountDialog = true },
                         onEditAccountClick = { editingAccount = it },
                         onSetPrimaryAccountClick = onSetPrimaryAccount,
                         onToggleArchivedClick = { acc -> onSetAccountArchived(acc.id, !acc.isArchived) },
                         onDeleteAccountClick = onDeleteAccount,
-                        onAssignUnassignedClick = onAssignUnassignedTransactions
+                        onAssignUnassignedClick = onAssignUnassignedTransactions,
+                        onResolveObservation = onResolveObservation,
+                        onDeleteObservation = onDeleteObservation
                     )
                 }
             }

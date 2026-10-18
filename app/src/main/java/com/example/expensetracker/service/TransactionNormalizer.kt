@@ -14,7 +14,11 @@ object TransactionNormalizer {
         option = RegexOption.IGNORE_CASE
     )
 
-    fun normalize(parsed: ParsedTransaction, rawText: String): NormalizedTransaction {
+    fun normalize(
+        parsed: ParsedTransaction,
+        rawText: String,
+        accountId: String? = parsed.accountId
+    ): NormalizedTransaction {
         val isTransfer = parsed.type == TransactionType.TRANSFER || transferKeywordsRegex.containsMatchIn(rawText)
 
         val finalType = when {
@@ -29,7 +33,9 @@ object TransactionNormalizer {
             type = finalType,
             source = parsed.source,
             timestamp = parsed.timestamp,
-            originalText = rawText
+            originalText = rawText,
+            referenceNumber = parsed.referenceNumber,
+            accountId = accountId
         )
     }
 

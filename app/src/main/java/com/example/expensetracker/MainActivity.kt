@@ -122,6 +122,8 @@ fun ExpenseTrackerApp(
     val accountsWithBalances by viewModel.accountsWithBalancesState.collectAsState()
     val selectedAccountId by viewModel.selectedAccountIdState.collectAsState()
     val isBalanceVisible by viewModel.isBalanceVisibleState.collectAsState()
+    val unresolvedObservations by viewModel.unresolvedObservationsState.collectAsState()
+    val reconciliationResults by viewModel.reconciliationResultsState.collectAsState()
 
     val unassignedTransactionCount = remember(transactions) {
         transactions.count { it.accountId == null }
@@ -338,13 +340,21 @@ fun ExpenseTrackerApp(
                             onDeletePaymentTemplate = { template -> viewModel.deletePaymentTemplate(template) },
                             onSaveSplitGroup = { groupId, name, members -> viewModel.saveSplitGroup(groupId, name, members) },
                             onDeleteSplitGroup = { group -> viewModel.deleteSplitGroup(group) },
-                            onSaveAccount = { id, name, openingBal, isPrimary ->
-                                viewModel.saveAccount(id, name, openingBal, isPrimary)
+                            onSaveAccount = { id, name, openingBal, isPrimary, accNum ->
+                                viewModel.saveAccount(id, name, openingBal, isPrimary, accNum)
                             },
                             onSetPrimaryAccount = { accId -> viewModel.setPrimaryAccount(accId) },
                             onSetAccountArchived = { accId, isArchived -> viewModel.setAccountArchived(accId, isArchived) },
                             onDeleteAccount = { acc -> viewModel.deleteAccount(acc) },
                             onAssignUnassignedTransactions = { accId -> viewModel.assignUnassignedTransactionsToAccount(accId) },
+                            unresolvedObservations = unresolvedObservations,
+                            reconciliationResults = reconciliationResults,
+                            onResolveObservation = { obsId, accId, rememberMapping ->
+                                viewModel.resolveObservation(obsId, accId, rememberMapping)
+                            },
+                            onDeleteObservation = { obsId ->
+                                viewModel.deleteObservation(obsId)
+                            },
                             onNavigateBack = { currentScreen = Screen.Overview }
                         )
                     }
