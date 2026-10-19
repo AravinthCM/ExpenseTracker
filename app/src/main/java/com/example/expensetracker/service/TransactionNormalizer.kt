@@ -17,7 +17,8 @@ object TransactionNormalizer {
     fun normalize(
         parsed: ParsedTransaction,
         rawText: String,
-        accountId: String? = parsed.accountId
+        accountId: String? = parsed.accountId,
+        balance: Double? = parsed.balance
     ): NormalizedTransaction {
         val isTransfer = parsed.type == TransactionType.TRANSFER || transferKeywordsRegex.containsMatchIn(rawText)
 
@@ -35,7 +36,8 @@ object TransactionNormalizer {
             timestamp = parsed.timestamp,
             originalText = rawText,
             referenceNumber = parsed.referenceNumber,
-            accountId = accountId
+            accountId = accountId,
+            balance = balance
         )
     }
 

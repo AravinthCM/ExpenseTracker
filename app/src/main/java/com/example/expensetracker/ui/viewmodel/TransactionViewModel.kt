@@ -387,7 +387,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 type = finalTx.type,
                 amount = finalTx.amount,
                 name = finalTx.title,
-                source = finalTx.source.name
+                source = finalTx.source.name,
+                balance = null
             )
 
             // Update matching confirmed recurring expense if present
@@ -423,6 +424,18 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun updateTransactionOnly(transaction: Transaction) {
         updateTransaction(transaction)
+    }
+
+    fun convertSplitExpenseToRegular(transactionId: String): String? = runBlocking(Dispatchers.IO) {
+        val split = expenseSplitDao.getSplitForTransactionSync(transactionId)
+            ?: return@runBlocking "This transaction is already a regular expense."
+        if (repaymentDao.countAllocationsForSplitSync(split.split.id) > 0) {
+            return@runBlocking "This split has repayment allocations and cannot be converted safely. Review or remove those settlements first."
+        }
+        db.runInTransaction {
+            expenseSplitDao.deleteSplitById(split.split.id)
+        }
+        return@runBlocking null
     }
 
     fun updateTransactionAndLearn(original: Transaction, updated: Transaction) {
@@ -631,6 +644,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 groupId = targetGroupId,
                 name = com.example.expensetracker.model.SplitGroupValidator.sanitizeMemberName(draft.name),
                 isMe = draft.isMe,
+                openingDebtPaise = draft.openingDebtPaise,
                 createdAt = now
             )
         }

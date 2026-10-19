@@ -380,7 +380,7 @@ fun CreateOrEditSplitGroupScreen(
     val membersState = remember(initialGroup) {
         mutableStateListOf<DraftMember>().apply {
             if (initialGroup != null) {
-                addAll(initialGroup.members.map { DraftMember(id = it.id, name = it.name, isMe = it.isMe) })
+                addAll(initialGroup.members.map { DraftMember(id = it.id, name = it.name, isMe = it.isMe, openingDebtPaise = it.openingDebtPaise) })
             } else {
                 // Default initial setup for new group: 2 members
                 add(DraftMember(name = "Me", isMe = true))
@@ -399,7 +399,7 @@ fun CreateOrEditSplitGroupScreen(
                 groupName.isNotBlank() || membersState.any { it.name.isNotBlank() && it.name != "Me" }
             } else {
                 val originalName = initialGroup.group.name
-                val originalMembers = initialGroup.members.map { DraftMember(id = it.id, name = it.name, isMe = it.isMe) }
+                val originalMembers = initialGroup.members.map { DraftMember(id = it.id, name = it.name, isMe = it.isMe, openingDebtPaise = it.openingDebtPaise) }
                 groupName != originalName || membersState.toList() != originalMembers
             }
         }
@@ -546,6 +546,21 @@ fun CreateOrEditSplitGroupScreen(
                                 singleLine = true,
                                 modifier = Modifier.weight(1f)
                             )
+
+                            if (!member.isMe) {
+                                OutlinedTextField(
+                                    value = if (member.openingDebtPaise == 0L) "" else (member.openingDebtPaise / 100.0).toString(),
+                                    onValueChange = { value ->
+                                        val paise = value.toDoubleOrNull()?.let { Math.round(it * 100.0) } ?: 0L
+                                        membersState[index] = member.copy(openingDebtPaise = paise.coerceAtLeast(0L))
+                                        validationErrorText = null
+                                    },
+                                    label = { Text("Existing owed") },
+                                    placeholder = { Text("₹0.00") },
+                                    singleLine = true,
+                                    modifier = Modifier.width(110.dp)
+                                )
+                            }
 
                             // "Me" Toggle Button
                             Box(

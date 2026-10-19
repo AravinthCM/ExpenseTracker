@@ -10,5 +10,6 @@ data class NormalizedTransaction(
     val timestamp: Long,
     val originalText: String,
     val referenceNumber: String? = null,
-    val accountId: String? = null
+    val accountId: String? = null,
+    val balance: Double? = null
 )

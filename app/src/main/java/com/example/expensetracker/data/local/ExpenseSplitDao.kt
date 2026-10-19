@@ -28,6 +28,10 @@ interface ExpenseSplitDao {
     fun getSplitForTransaction(transactionId: String): Flow<ExpenseSplitWithShares?>
 
     @Transaction
+    @Query("SELECT * FROM expense_splits WHERE transactionId = :transactionId LIMIT 1")
+    fun getSplitForTransactionSync(transactionId: String): ExpenseSplitWithShares?
+
+    @Transaction
     @Query("SELECT * FROM expense_splits WHERE groupId = :groupId")
     fun getSplitsForGroupSync(groupId: String): List<ExpenseSplitWithShares>
 

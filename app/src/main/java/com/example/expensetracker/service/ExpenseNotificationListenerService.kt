@@ -209,7 +209,8 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
                         val normalizedTransaction = TransactionNormalizer.normalize(
                             parsed = parsedTransaction,
                             rawText = rawText,
-                            accountId = transactionAccountId
+                            accountId = transactionAccountId,
+                            balance = detectionResult.balance ?: parsedTransaction.balance
                         )
                         Log.d(TAG, "NORMALIZE_RESULT: amount=${normalizedTransaction.amount} type=${normalizedTransaction.type} name=${normalizedTransaction.name} source=${normalizedTransaction.source} accountId=${normalizedTransaction.accountId}")
 

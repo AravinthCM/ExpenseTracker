@@ -24,5 +24,6 @@ data class SplitGroupMemberEntity(
     val groupId: String,
     val name: String,
     val isMe: Boolean = false,
+    val openingDebtPaise: Long = 0L,
     val createdAt: Long = System.currentTimeMillis()
 )

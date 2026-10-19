@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +36,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -65,6 +67,8 @@ import java.util.UUID
 @Composable
 fun AddOrEditTransactionBottomSheet(
     initialTransaction: Transaction? = null,
+    isSplitExpense: Boolean = false,
+    onConvertSplitToRegular: (() -> String?)? = null,
     availableCategories: List<String> = emptyList(),
     accounts: List<com.example.expensetracker.data.local.AccountEntity> = emptyList(),
     defaultAccountId: String? = null,
@@ -85,6 +89,7 @@ fun AddOrEditTransactionBottomSheet(
     }
     var balanceIncludedInAccount by remember { mutableStateOf(initialTransaction?.balanceIncludedInAccount) }
     var balanceInclusionError by remember { mutableStateOf<String?>(null) }
+    var showSplitConversionConfirm by remember { mutableStateOf(false) }
     var accountDropdownExpanded by remember { mutableStateOf(false) }
     var dateText by remember {
         mutableStateOf(
@@ -150,6 +155,12 @@ fun AddOrEditTransactionBottomSheet(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            if (initialTransaction != null && isSplitExpense) {
+                TextButton(onClick = { showSplitConversionConfirm = true }) {
+                    Text("Convert split expense to regular expense", color = appColors.negative)
+                }
+            }
 
             // Type Toggle Row
             Row(
@@ -506,6 +517,21 @@ fun AddOrEditTransactionBottomSheet(
                 )
             }
         }
+    }
+
+    if (showSplitConversionConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSplitConversionConfirm = false },
+            title = { Text("Convert to regular expense?") },
+            text = { Text("This removes the split shares for this expense. Existing repayment settlements are protected and must be handled first if present.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val error = onConvertSplitToRegular?.invoke()
+                    if (error == null) onDismiss() else showSplitConversionConfirm = false
+                }) { Text("Convert") }
+            },
+            dismissButton = { TextButton(onClick = { showSplitConversionConfirm = false }) { Text("Cancel") } }
+        )
     }
 }
 

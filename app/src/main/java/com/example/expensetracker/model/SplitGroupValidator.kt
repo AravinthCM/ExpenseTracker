@@ -25,7 +25,8 @@ sealed class SplitGroupValidationError {
 data class DraftMember(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
-    val isMe: Boolean = false
+    val isMe: Boolean = false,
+    val openingDebtPaise: Long = 0L
 )
 
 data class ValidationResult(

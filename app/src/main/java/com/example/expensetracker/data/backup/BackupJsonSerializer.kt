@@ -126,6 +126,7 @@ object BackupJsonSerializer {
             obj.put("groupId", mem.groupId)
             obj.put("name", mem.name)
             obj.put("isMe", mem.isMe)
+            obj.put("openingDebtPaise", mem.openingDebtPaise)
             obj.put("createdAt", mem.createdAt)
             membersArr.put(obj)
         }
@@ -408,6 +409,7 @@ object BackupJsonSerializer {
                     groupId = obj.getString("groupId"),
                     name = obj.getString("name"),
                     isMe = obj.optBoolean("isMe", false),
+                    openingDebtPaise = obj.optLong("openingDebtPaise", 0L),
                     createdAt = obj.optLong("createdAt", System.currentTimeMillis())
                 )
             )

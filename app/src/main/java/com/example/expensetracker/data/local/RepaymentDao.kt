@@ -29,6 +29,9 @@ interface RepaymentDao {
     @Query("SELECT COUNT(*) FROM repayments WHERE linkedTransactionId = :transactionId")
     fun isTransactionLinkedToRepaymentSync(transactionId: String): Int
 
+    @Query("SELECT COUNT(*) FROM repayment_allocations WHERE shareId IN (SELECT id FROM expense_split_shares WHERE splitId = :splitId)")
+    fun countAllocationsForSplitSync(splitId: String): Int
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     fun insertRepayment(repayment: RepaymentEntity)
 

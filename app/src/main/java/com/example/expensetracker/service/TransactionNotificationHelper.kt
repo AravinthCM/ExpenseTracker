@@ -40,7 +40,8 @@ object TransactionNotificationHelper {
         type: TransactionType,
         amount: Double,
         name: String,
-        source: String
+        source: String,
+        balance: Double? = null
     ) {
         try {
             // Permission check for Android 13+
@@ -54,7 +55,7 @@ object TransactionNotificationHelper {
             createNotificationChannel(context)
 
             val title = buildNotificationTitle(type)
-            val message = buildNotificationMessage(type, amount, name, source)
+            val message = buildNotificationMessage(type, amount, name, source, balance)
 
             val intent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -96,13 +97,14 @@ object TransactionNotificationHelper {
         type: TransactionType,
         amount: Double,
         name: String,
-        source: String
+        source: String,
+        balance: Double? = null
     ): String {
         val formattedAmount = CurrencyFormatter.format(amount)
         val trimmedName = name.trim()
         val isManual = source.equals("MANUAL", ignoreCase = true)
 
-        return when (type) {
+        val transactionMessage = when (type) {
             TransactionType.EXPENSE -> {
                 when {
                     trimmedName.isBlank() -> "$formattedAmount recorded"
@@ -121,6 +123,11 @@ object TransactionNotificationHelper {
             TransactionType.TRANSFER -> {
                 formattedAmount
             }
+        }
+        return if (balance != null && balance >= 0.0) {
+            "$transactionMessage\nAvailable balance: ${CurrencyFormatter.format(balance)}"
+        } else {
+            transactionMessage
         }
     }
 }

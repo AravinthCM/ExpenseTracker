@@ -254,7 +254,8 @@ object TransactionDeduplicator {
                         type = transaction.type,
                         amount = transaction.amount,
                         name = transaction.name,
-                        source = transaction.source
+                        source = transaction.source,
+                        balance = transaction.balance
                     )
                 }
 

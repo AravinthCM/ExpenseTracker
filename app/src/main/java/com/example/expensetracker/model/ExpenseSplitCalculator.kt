@@ -172,6 +172,10 @@ object ExpenseSplitCalculator {
 
         val balances = mutableMapOf<String, Long>()
 
+        members.filter { !it.isMe && it.openingDebtPaise > 0L }.forEach { member ->
+            balances[member.id] = member.openingDebtPaise
+        }
+
         for (splitWithShares in splitsWithShares) {
             val payerId = splitWithShares.split.payerMemberId
             for (share in splitWithShares.shares) {

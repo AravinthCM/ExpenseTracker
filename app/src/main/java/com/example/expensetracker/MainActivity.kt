@@ -452,6 +452,10 @@ fun ExpenseTrackerApp(
         editingTransaction?.let { transaction ->
             com.example.expensetracker.ui.components.AddOrEditTransactionBottomSheet(
                 initialTransaction = transaction,
+                isSplitExpense = expenseSplits.any { it.split.transactionId == transaction.id },
+                onConvertSplitToRegular = {
+                    viewModel.convertSplitExpenseToRegular(transaction.id)
+                },
                 availableCategories = categories.map { it.name },
                 accounts = accounts,
                 defaultAccountId = primaryAccount?.id,

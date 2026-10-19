@@ -367,6 +367,10 @@ class TestDatabaseHarness : AppDatabase() {
             val sp = expenseSplitsTable.find { it.transactionId == transactionId }
             return flowOf(sp?.let { ExpenseSplitWithShares(it, expenseSplitSharesTable.filter { s -> s.splitId == it.id }) })
         }
+        override fun getSplitForTransactionSync(transactionId: String): ExpenseSplitWithShares? {
+            val sp = expenseSplitsTable.find { it.transactionId == transactionId } ?: return null
+            return ExpenseSplitWithShares(sp, expenseSplitSharesTable.filter { it.splitId == sp.id })
+        }
         override fun getSplitsForGroupSync(groupId: String): List<ExpenseSplitWithShares> {
             return expenseSplitsTable.filter { it.groupId == groupId }.map { sp ->
                 ExpenseSplitWithShares(sp, expenseSplitSharesTable.filter { it.splitId == sp.id })
@@ -428,6 +432,9 @@ class TestDatabaseHarness : AppDatabase() {
             repaymentsTable.find { it.linkedTransactionId == transactionId }
         override fun isTransactionLinkedToRepaymentSync(transactionId: String): Int =
             repaymentsTable.count { it.linkedTransactionId == transactionId }
+        override fun countAllocationsForSplitSync(splitId: String): Int = repaymentAllocationsTable.count { allocation ->
+            expenseSplitSharesTable.any { share -> share.id == allocation.shareId && share.splitId == splitId }
+        }
         override fun insertRepayment(repayment: RepaymentEntity) {
             if (enforceForeignKeys) {
                 if (splitGroupsTable.none { it.id == repayment.groupId }) {
