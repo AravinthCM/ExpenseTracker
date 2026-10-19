@@ -17,8 +17,11 @@ object AccountBalanceCalculator {
         account: AccountEntity,
         transactions: List<TransactionEntity>
     ): Long {
-        var balance = account.openingBalancePaise
-        val assigned = transactions.filter { it.accountId == account.id }
+        var balance = account.balanceBaselinePaise ?: account.openingBalancePaise
+        val baselineTimestamp = account.balanceBaselineTimestamp
+        val assigned = transactions.filter {
+            it.accountId == account.id && (baselineTimestamp == null || it.timestamp > baselineTimestamp)
+        }
         for (tx in assigned) {
             val amountPaise = (tx.amount * 100.0).roundToLong()
             when (tx.type) {

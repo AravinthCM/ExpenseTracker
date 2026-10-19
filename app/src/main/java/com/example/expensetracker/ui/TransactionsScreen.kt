@@ -141,7 +141,7 @@ fun TransactionsScreen(
             }
             .filter { transaction ->
                 if (selectedCategory != "All") {
-                    transaction.category.name.equals(selectedCategory, ignoreCase = true)
+                    transaction.displayCategoryName.equals(selectedCategory, ignoreCase = true)
                 } else true
             }
             .filter { transaction ->

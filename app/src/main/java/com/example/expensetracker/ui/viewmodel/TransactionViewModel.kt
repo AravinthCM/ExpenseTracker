@@ -180,7 +180,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         )
 
     val categoriesState: StateFlow<List<CategoryEntity>> = categoryDao.getAllCategories()
-        .map { list -> list.distinctBy { it.name.trim().lowercase() } }
+        .map { list -> list.sortedBy { it.name.trim().lowercase() } }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -218,7 +218,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun saveAccount(
         id: String?,
         name: String,
-        openingBalancePaise: Long,
+        currentBalancePaise: Long,
         isPrimary: Boolean,
         accountNumber: String? = null
     ): String? = runBlocking(Dispatchers.IO) {
@@ -240,12 +240,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         val accountEntity = com.example.expensetracker.data.local.AccountEntity(
             id = targetId,
             name = trimmed,
-            openingBalancePaise = openingBalancePaise,
+            openingBalancePaise = existingAccount?.openingBalancePaise ?: 0L,
             isPrimary = isPrimary,
             isArchived = existingAccount?.isArchived ?: false,
             createdAt = existingAccount?.createdAt ?: now,
             updatedAt = now,
-            accountNumber = accountNumber?.trim()?.takeIf { it.isNotBlank() }
+            accountNumber = accountNumber?.trim()?.takeIf { it.isNotBlank() },
+            balanceBaselinePaise = currentBalancePaise,
+            balanceBaselineTimestamp = now
         )
 
         if (existingAccount == null) {
@@ -419,7 +421,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         it.title.trim().lowercase() == normalizedTitle
             }
         }
-        return CategoryLearningPreview(updated, original.category.name, updated.category.name, count)
+        return CategoryLearningPreview(updated, original.displayCategoryName, updated.displayCategoryName, count)
     }
 
     fun updateTransactionOnly(transaction: Transaction) {
@@ -455,7 +457,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     }
                     .map { it.id }
                 if (matchingIds.isNotEmpty()) {
-                    transactionDao.updateCategoryForTransactionIds(matchingIds, updated.category.name)
+                    transactionDao.updateCategoryForTransactionIds(matchingIds, updated.displayCategoryName)
                 }
                 val pattern = "(?i)$escapedPattern"
                 val existing = categoryMappingDao.getMappingByPatternSync(pattern)
@@ -464,12 +466,12 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         CategoryMappingEntity(
                             id = UUID.randomUUID().toString(),
                             pattern = pattern,
-                            categoryName = updated.category.name,
+                            categoryName = updated.displayCategoryName,
                             priority = 0
                         )
                     )
-                } else if (!existing.categoryName.equals(updated.category.name, ignoreCase = true)) {
-                    categoryMappingDao.updateMapping(existing.copy(categoryName = updated.category.name))
+                } else if (!existing.categoryName.equals(updated.displayCategoryName, ignoreCase = true)) {
+                    categoryMappingDao.updateMapping(existing.copy(categoryName = updated.displayCategoryName))
                 }
             }
         }
@@ -521,6 +523,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         val trimmed = name.trim()
         if (trimmed.isBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
+            val normalized = trimmed.lowercase()
+            if (categoryDao.getAllCategoriesSync().any { it.name.trim().lowercase() == normalized }) return@launch
             categoryDao.insertCategory(
                 CategoryEntity(id = UUID.randomUUID().toString(), name = trimmed)
             )

@@ -634,7 +634,7 @@ fun TransactionDetailBottomSheet(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 DetailRow(label = "Type", value = transaction.type.name.lowercase().replaceFirstChar { it.uppercase() })
-                DetailRow(label = "Category", value = transaction.category.name.lowercase().replaceFirstChar { it.uppercase() })
+                        DetailRow(label = "Category", value = transaction.displayCategoryName)
                 val sourceFormatted = when (transaction.source.name) {
                     "GPAY" -> "GPay"
                     "BANK_SMS" -> "Bank SMS"

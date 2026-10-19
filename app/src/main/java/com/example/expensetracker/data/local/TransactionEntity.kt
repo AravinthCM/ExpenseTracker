@@ -7,6 +7,7 @@ import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.model.TransactionCategory
 import com.example.expensetracker.model.TransactionSource
 import com.example.expensetracker.model.TransactionType
+import java.util.Locale
 
 @Entity(
     tableName = "transactions",
@@ -39,7 +40,7 @@ fun TransactionEntity.toDomainModel(): Transaction {
     }
 
     val transactionCategory = try {
-        TransactionCategory.valueOf(category)
+        TransactionCategory.valueOf(category.trim().uppercase(Locale.ROOT))
     } catch (e: Exception) {
         TransactionCategory.OTHER
     }
@@ -62,7 +63,8 @@ fun TransactionEntity.toDomainModel(): Transaction {
         originalText = originalText,
         accountId = accountId,
         referenceNumber = referenceNumber,
-        balanceIncludedInAccount = balanceIncludedInAccount
+        balanceIncludedInAccount = balanceIncludedInAccount,
+        categoryName = category
     )
 }
 
@@ -72,7 +74,7 @@ fun Transaction.toEntity(): TransactionEntity {
         title = title,
         amount = amount,
         type = type.name,
-        category = category.name,
+        category = categoryName ?: category.name,
         date = date,
         source = source.name,
         timestamp = timestamp,

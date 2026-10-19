@@ -54,6 +54,8 @@ object BackupJsonSerializer {
             obj.put("id", acc.id)
             obj.put("name", acc.name)
             obj.put("openingBalancePaise", acc.openingBalancePaise)
+            obj.putOptOrNull("balanceBaselinePaise", acc.balanceBaselinePaise)
+            obj.putOptOrNull("balanceBaselineTimestamp", acc.balanceBaselineTimestamp)
             obj.put("isPrimary", acc.isPrimary)
             obj.put("isArchived", acc.isArchived)
             obj.put("createdAt", acc.createdAt)
@@ -316,6 +318,8 @@ object BackupJsonSerializer {
                     id = obj.getString("id"),
                     name = obj.getString("name"),
                     openingBalancePaise = obj.getLong("openingBalancePaise"),
+                    balanceBaselinePaise = obj.getNullableLong("balanceBaselinePaise"),
+                    balanceBaselineTimestamp = obj.getNullableLong("balanceBaselineTimestamp"),
                     isPrimary = obj.optBoolean("isPrimary", false),
                     isArchived = obj.optBoolean("isArchived", false),
                     createdAt = obj.optLong("createdAt", System.currentTimeMillis()),

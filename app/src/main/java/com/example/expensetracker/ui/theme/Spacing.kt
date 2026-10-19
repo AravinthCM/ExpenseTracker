@@ -15,4 +15,7 @@ object AppSpacing {
     val screenPadding: Dp = 16.dp
     val cardPadding: Dp = 14.dp
     val itemSpacing: Dp = 12.dp
+
+    /** Minimum accessible touch target size for interactive controls (Material guidance). */
+    val minTouchTarget: Dp = 48.dp
 }

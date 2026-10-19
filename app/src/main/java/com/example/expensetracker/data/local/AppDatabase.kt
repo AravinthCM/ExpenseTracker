@@ -27,7 +27,7 @@ import java.util.concurrent.Executors
         BalanceObservationEntity::class,
         SourceAccountMappingEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -48,6 +48,7 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+        private val categoryInitializationLock = Any()
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -364,6 +365,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `accounts` ADD COLUMN `balanceBaselinePaise` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `accounts` ADD COLUMN `balanceBaselineTimestamp` INTEGER DEFAULT NULL")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -371,7 +379,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "expense_tracker_db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
@@ -387,45 +395,31 @@ abstract class AppDatabase : RoomDatabase() {
 
         private fun populateDefaultCategories(context: Context) {
             Executors.newSingleThreadExecutor().execute {
-                try {
-                    val db = INSTANCE ?: return@execute
-                    val existing = db.categoryDao().getAllCategoriesSync()
+                synchronized(categoryInitializationLock) {
+                    try {
+                        val db = INSTANCE ?: return@synchronized
+                        val existing = db.categoryDao().getAllCategoriesSync()
 
-                    // 1. Deduplicate existing categories in DB if duplicates exist
-                    val seenNames = mutableSetOf<String>()
-                    val duplicatesToDelete = mutableListOf<String>()
-                    for (cat in existing) {
-                        val key = cat.name.trim().lowercase()
-                        if (seenNames.contains(key)) {
-                            duplicatesToDelete.add(cat.id)
-                        } else {
-                            seenNames.add(key)
-                        }
-                    }
-                    duplicatesToDelete.forEach { dupId ->
-                        db.categoryDao().deleteCategoryById(dupId)
-                    }
-
-                    // 2. Populate defaults if database has no categories
-                    val currentAfterCleanup = db.categoryDao().getAllCategoriesSync()
-                    if (currentAfterCleanup.isEmpty()) {
-                        val defaultNames = listOf(
-                            "Food",
-                            "Fuel",
-                            "Shopping",
-                            "Bills",
-                            "Entertainment",
-                            "Travel",
-                            "Other"
-                        )
-                        defaultNames.forEach { name ->
-                            db.categoryDao().insertCategory(
-                                CategoryEntity(id = UUID.randomUUID().toString(), name = name)
+                        // Populate defaults only when no categories exist. Existing rows are preserved.
+                        if (existing.isEmpty()) {
+                            val defaultNames = listOf(
+                                "Food",
+                                "Fuel",
+                                "Shopping",
+                                "Bills",
+                                "Entertainment",
+                                "Travel",
+                                "Other"
                             )
+                            defaultNames.forEach { name ->
+                                db.categoryDao().insertCategory(
+                                    CategoryEntity(id = UUID.randomUUID().toString(), name = name)
+                                )
+                            }
                         }
+                    } catch (e: Exception) {
+                        // Ignore background init error if DB not ready
                     }
-                } catch (e: Exception) {
-                    // Ignore background init error if DB not ready
                 }
             }
         }

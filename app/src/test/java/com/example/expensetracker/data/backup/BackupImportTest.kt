@@ -239,6 +239,134 @@ class BackupImportTest {
         assertTrue("Transaction category must exist in categories", categories.any { it.name == tx.category })
     }
 
+    @Test
+    fun mergeResolvesExternalCategoryIdToCanonicalLocalCategoryName() = runBlocking {
+        val existingCategory = CategoryEntity(id = "local-food", name = " food ")
+        db.categoryDao().insertCategory(existingCategory)
+        val payload = createSamplePayload().copy(
+            categories = listOf(CategoryEntity(id = "external-food-99", name = "Food")),
+            transactions = listOf(
+                createSamplePayload().transactions.first().copy(category = "external-food-99")
+            )
+        )
+
+        importer.mergeBackup(createSampleBackup().copy(data = payload)).getOrThrow()
+
+        val imported = db.transactionDao().getAllTransactionsSync().single()
+        assertEquals("food", imported.category.trim().lowercase())
+        assertEquals("local-food", db.categoryDao().getAllCategoriesSync().single().id)
+    }
+
+    @Test
+    fun customImportedCategoryDoesNotCollapseToOtherInDomainModel() = runBlocking {
+        val payload = createSamplePayload().copy(
+            categories = listOf(CategoryEntity(id = "external-transport", name = "Transport")),
+            transactions = listOf(createSamplePayload().transactions.first().copy(category = "Transport"))
+        )
+
+        importer.restoreBackup(createSampleBackup().copy(data = payload)).getOrThrow()
+
+        val transaction = db.transactionDao().getAllTransactionsSync().single().toDomainModel()
+        assertEquals("Transport", transaction.displayCategoryName)
+    }
+
+    @Test
+    fun restoreDeduplicatesRepeatedCategoryDefinitionsAndPreservesTransactions() = runBlocking {
+        val payload = createSamplePayload().copy(
+            categories = listOf(
+                CategoryEntity(id = "cat-one", name = " one "),
+                CategoryEntity(id = "cat-one-copy", name = "ONE"),
+                CategoryEntity(id = "cat-two", name = "two")
+            ),
+            transactions = listOf(
+                createSamplePayload().transactions[0].copy(category = "cat-one"),
+                createSamplePayload().transactions[1].copy(id = "tx-two", category = "cat-two")
+            )
+        )
+
+        importer.restoreBackup(createSampleBackup().copy(data = payload)).getOrThrow()
+
+        assertEquals(2, db.categoryDao().getAllCategoriesSync().size)
+        assertEquals(
+            setOf("one", "two"),
+            db.transactionDao().getAllTransactionsSync().map { it.category.trim().lowercase() }.toSet()
+        )
+    }
+
+    @Test
+    fun mergeReusingEquivalentCategoryDoesNotCreateAnotherRow() = runBlocking {
+        db.categoryDao().insertCategory(CategoryEntity(id = "local-one", name = " One "))
+        val payload = createSamplePayload().copy(
+            categories = listOf(CategoryEntity(id = "external-one", name = "one")),
+            transactions = listOf(createSamplePayload().transactions[0].copy(category = "external-one"))
+        )
+        val backup = createSampleBackup().copy(data = payload)
+
+        importer.mergeBackup(backup).getOrThrow()
+
+        assertEquals(1, db.categoryDao().getAllCategoriesSync().size)
+        assertEquals("one", db.transactionDao().getAllTransactionsSync().single().category.trim().lowercase())
+    }
+
+    @Test
+    fun mergeHandlesPreExistingDuplicateBillsAndRemainsIdempotent() = runBlocking {
+        db.categoryDao().insertCategory(CategoryEntity(id = "bills-a", name = "Bills"))
+        db.categoryDao().insertCategory(CategoryEntity(id = "bills-b", name = " Bills "))
+        val payload = createSamplePayload().copy(
+            categories = listOf(CategoryEntity(id = "external-bills", name = "Bills")),
+            transactions = listOf(createSamplePayload().transactions.first().copy(category = "external-bills")),
+            splitGroups = emptyList(),
+            splitGroupMembers = emptyList(),
+            expenseSplits = emptyList(),
+            expenseSplitShares = emptyList(),
+            repayments = emptyList(),
+            repaymentAllocations = emptyList(),
+            recurringExpenses = emptyList(),
+            paymentTemplates = emptyList(),
+            balanceObservations = emptyList(),
+            sourceAccountMappings = emptyList()
+        )
+        val backup = createSampleBackup().copy(data = payload)
+        val parsedBackup = BackupJsonSerializer.deserialize(BackupJsonSerializer.serialize(backup))
+
+        assertEquals("external-bills", parsedBackup.data.transactions.single().category)
+        importer.mergeBackup(parsedBackup).getOrThrow()
+        val second = importer.mergeBackup(parsedBackup).getOrThrow()
+
+        assertEquals(0, second.transactionsImported)
+        assertEquals(2, db.categoryDao().getAllCategoriesSync().size)
+        assertEquals("bills", db.transactionDao().getAllTransactionsSync().single().category.lowercase())
+    }
+
+    @Test
+    fun mergeKeepsDistinctCategoryNamesSeparate() = runBlocking {
+        val payload = createSamplePayload().copy(
+            categories = listOf(
+                CategoryEntity(id = "external-bills", name = "Bills"),
+                CategoryEntity(id = "external-bills-tax", name = "Bills - Tax")
+            ),
+            transactions = listOf(
+                createSamplePayload().transactions[0].copy(category = "external-bills"),
+                createSamplePayload().transactions[1].copy(id = "tx-tax", category = "external-bills-tax")
+            ),
+            splitGroups = emptyList(),
+            splitGroupMembers = emptyList(),
+            expenseSplits = emptyList(),
+            expenseSplitShares = emptyList(),
+            repayments = emptyList(),
+            repaymentAllocations = emptyList(),
+            recurringExpenses = emptyList(),
+            paymentTemplates = emptyList(),
+            balanceObservations = emptyList(),
+            sourceAccountMappings = emptyList()
+        )
+
+        importer.mergeBackup(createSampleBackup().copy(data = payload)).getOrThrow()
+
+        assertEquals(setOf("bills", "bills - tax"), db.transactionDao().getAllTransactionsSync()
+            .map { it.category.lowercase() }.toSet())
+    }
+
     // 6. Split shares and repayment allocations
     @Test
     fun test6_splitSharesAndRepaymentAllocations() = runBlocking {
@@ -314,6 +442,7 @@ class BackupImportTest {
         assertEquals(0, res2.transactionsImported)
         assertEquals(3, res2.duplicatesSkipped)
         assertEquals(3, db.transactionDao().getAllTransactionsSync().size)
+        assertEquals(2, db.categoryDao().getAllCategoriesSync().size)
     }
 
     // 10. Duplicate candidates that must remain separate until reviewed
@@ -337,6 +466,16 @@ class BackupImportTest {
         val preview = BackupValidator.generatePreviewSummary(backup, db)
         assertEquals(1, preview.duplicateCandidates.size)
         assertEquals("Same title, amount, date and type", preview.duplicateCandidates[0].reason)
+    }
+
+    @Test
+    fun deletingOneCategoryIdDoesNotPretendToDeleteAnotherSameNamedRow() {
+        db.categoryDao().insertCategory(CategoryEntity(id = "cat-a", name = "one"))
+        db.categoryDao().insertCategory(CategoryEntity(id = "cat-b", name = "one"))
+
+        db.categoryDao().deleteCategoryById("cat-a")
+
+        assertEquals(listOf("cat-b"), db.categoryDao().getAllCategoriesSync().map { it.id })
     }
 
     // 11. Transactions with identical amounts but different references

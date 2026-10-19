@@ -70,6 +70,64 @@ class AccountBalanceTest {
     }
 
     @Test
+    fun currentBalanceBaselineIgnoresHistoricalTransactionsAndAppliesLaterChanges() {
+        val account = AccountEntity(
+            id = "acc1",
+            name = "SBI",
+            openingBalancePaise = 0L,
+            balanceBaselinePaise = 2200000L,
+            balanceBaselineTimestamp = 2_000L
+        )
+        val historicalExpense = TransactionEntity(
+            id = "historical",
+            title = "Historical expense",
+            amount = 1000.0,
+            type = "EXPENSE",
+            category = "Food",
+            date = "2026-01-01",
+            source = "MANUAL",
+            timestamp = 1_000L,
+            accountId = "acc1"
+        )
+        val laterIncome = historicalExpense.copy(
+            id = "later",
+            title = "Later income",
+            amount = 123.45,
+            type = "INCOME",
+            timestamp = 3_000L
+        )
+
+        assertEquals(
+            2_212_345L,
+            AccountBalanceCalculator.calculateAccountBalancePaise(account, listOf(historicalExpense, laterIncome))
+        )
+    }
+
+    @Test
+    fun baselineTimestampIsExclusive() {
+        val account = AccountEntity(
+            id = "acc1",
+            name = "SBI",
+            openingBalancePaise = 0L,
+            balanceBaselinePaise = 10000L,
+            balanceBaselineTimestamp = 1_000L
+        )
+        val atBaseline = TransactionEntity(
+            id = "at-baseline",
+            title = "At baseline",
+            amount = 50.0,
+            type = "EXPENSE",
+            category = "Food",
+            date = "2026-01-01",
+            source = "MANUAL",
+            timestamp = 1_000L,
+            accountId = "acc1"
+        )
+
+        assertEquals(10000L, AccountBalanceCalculator.calculateAccountBalancePaise(account, listOf(atBaseline)))
+    }
+
+    @Test
     fun test5_incomeIncreasesAccountBalance() {
         val account = AccountEntity(id = "acc1", name = "SBI", openingBalancePaise = 100000L) // ₹1000.00
         val txs = listOf(

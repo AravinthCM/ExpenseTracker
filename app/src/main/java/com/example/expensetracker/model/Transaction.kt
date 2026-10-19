@@ -36,5 +36,10 @@ data class Transaction(
     val originalText: String = "",
     val accountId: String? = null,
     val referenceNumber: String? = null,
-    val balanceIncludedInAccount: Boolean? = null
-)
+    val balanceIncludedInAccount: Boolean? = null,
+    val categoryName: String? = null
+) {
+    val displayCategoryName: String
+        get() = categoryName?.trim().takeUnless { it.isNullOrBlank() }
+            ?: category.name.lowercase().replaceFirstChar { it.uppercase() }
+}

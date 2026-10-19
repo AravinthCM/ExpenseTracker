@@ -17,5 +17,7 @@ data class AccountEntity(
     val isArchived: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val accountNumber: String? = null
+    val accountNumber: String? = null,
+    val balanceBaselinePaise: Long? = null,
+    val balanceBaselineTimestamp: Long? = null
 )

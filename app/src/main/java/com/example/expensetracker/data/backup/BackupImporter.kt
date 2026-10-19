@@ -73,17 +73,47 @@ class BackupImporter(
                 db.openHelper.writableDatabase.execSQL("DELETE FROM categories")
                 db.openHelper.writableDatabase.execSQL("DELETE FROM accounts")
 
+                val canonicalCategories = mutableListOf<CategoryEntity>()
+                val categoryNamesByKey = mutableMapOf<String, String>()
+                data.categories.forEach { category ->
+                    val normalizedName = category.name.trim()
+                    if (normalizedName.isBlank()) {
+                        throw BackupValidationException("Imported category ${category.id} has a blank name")
+                    }
+                    val existing = canonicalCategories.firstOrNull {
+                        normalizeCategoryKey(it.name) == normalizeCategoryKey(normalizedName)
+                    }
+                    val canonical = existing ?: category.copy(name = normalizedName).also { canonicalCategories.add(it) }
+                    categoryNamesByKey[category.id] = canonical.name
+                }
+
                 // Insert in parent-to-child order to satisfy foreign keys
                 data.accounts.forEach { db.accountDao().insertAccount(it) }
-                data.categories.forEach { db.categoryDao().insertCategory(it) }
-                data.categoryMappings.forEach { db.categoryMappingDao().insertMapping(it) }
+                canonicalCategories.forEach { db.categoryDao().insertCategory(it) }
+                data.categoryMappings.forEach { mapping ->
+                    val categoryName = data.categories.firstOrNull { it.id == mapping.categoryName }?.let {
+                        categoryNamesByKey[it.id]
+                    } ?: mapping.categoryName.trim()
+                    db.categoryMappingDao().insertMapping(mapping.copy(categoryName = categoryName))
+                }
                 data.recurringExpenses.forEach { db.recurringExpenseDao().insertRecurringExpense(it) }
                 data.paymentTemplates.forEach { db.paymentTemplateDao().insert(it) }
                 data.sourceAccountMappings.forEach { db.sourceAccountMappingDao().insert(it) }
                 data.balanceObservations.forEach { db.balanceObservationDao().insert(it) }
 
+                val resolvedCategories = canonicalCategories.toMutableList()
                 data.transactions.forEach {
-                    db.transactionDao().insertTransaction(it.toEntity())
+                    val categoryName = resolveImportedCategoryName(
+                        categoryValue = it.category,
+                        sourceCategories = data.categories,
+                        existingCategories = resolvedCategories,
+                        categoryNamesByKey = categoryNamesByKey,
+                        insertCategory = { category ->
+                            db.categoryDao().insertCategory(category)
+                            resolvedCategories.add(category)
+                        }
+                    )
+                    db.transactionDao().insertTransaction(it.toEntity().copy(category = categoryName))
                 }
 
                 data.splitGroups.forEach { db.splitGroupDao().insertGroup(it) }
@@ -136,12 +166,28 @@ class BackupImporter(
             db.runInTransaction {
                 // 1. Categories
                 val existingCategories = db.categoryDao().getAllCategoriesSync()
-                val existingCatByName = existingCategories.associateBy { it.name.trim().lowercase() }
+                val existingCatByName = existingCategories.groupBy { normalizeCategoryKey(it.name) }
+                    .mapValues { (_, categories) -> categories.minBy { it.id } }
+                    .toMutableMap()
+                val categoryNamesByKey = mutableMapOf<String, String>()
+                    val resolvedCategories = existingCatByName.values.toMutableList()
                 data.categories.forEach { cat ->
-                    val key = cat.name.trim().lowercase()
-                    if (!existingCatByName.containsKey(key)) {
-                        db.categoryDao().insertCategory(cat)
+                    val normalizedName = cat.name.trim()
+                    if (normalizedName.isBlank()) {
+                        throw BackupValidationException("Imported category ${cat.id} has a blank name")
+                    }
+                    val key = normalizeCategoryKey(normalizedName)
+                    val localCategory = existingCatByName[key]
+                    if (localCategory == null) {
+                        val categoryId = if (existingCategories.none { it.id == cat.id }) cat.id else UUID.randomUUID().toString()
+                        val insertedCategory = cat.copy(id = categoryId, name = normalizedName)
+                        db.categoryDao().insertCategory(insertedCategory)
+                        existingCatByName[key] = insertedCategory
+                        resolvedCategories.add(insertedCategory)
                         categoriesAdded++
+                        categoryNamesByKey[cat.id] = insertedCategory.name
+                    } else {
+                        categoryNamesByKey[cat.id] = localCategory.name
                     }
                 }
 
@@ -221,7 +267,19 @@ class BackupImporter(
 
                     val entity = tx.toEntity().copy(
                         id = targetId,
-                        accountId = resolvedAccountId
+                        accountId = resolvedAccountId,
+                        category = resolveImportedCategoryName(
+                            categoryValue = tx.category,
+                            sourceCategories = data.categories,
+                            existingCategories = resolvedCategories,
+                            categoryNamesByKey = categoryNamesByKey,
+                            insertCategory = { category ->
+                                db.categoryDao().insertCategory(category)
+                                existingCatByName[normalizeCategoryKey(category.name)] = category
+                                resolvedCategories.add(category)
+                                categoriesAdded++
+                            }
+                        )
                     )
                     db.transactionDao().insertTransaction(entity)
                     transactionsAdded++
@@ -408,5 +466,43 @@ class BackupImporter(
                 safetyBackupFile = null
             )
         }
+    }
+
+    private fun normalizeCategoryKey(value: String): String =
+        value.trim().lowercase(Locale.ROOT)
+
+    private fun resolveImportedCategoryName(
+        categoryValue: String,
+        sourceCategories: List<CategoryEntity>,
+        existingCategories: List<CategoryEntity>,
+        categoryNamesByKey: MutableMap<String, String>,
+        insertCategory: (CategoryEntity) -> Unit
+    ): String {
+        val sourceCategory = sourceCategories.firstOrNull { it.id == categoryValue }
+        val requestedName = sourceCategory?.name?.trim() ?: categoryValue.trim()
+        if (requestedName.isBlank()) {
+            throw BackupValidationException("Imported transaction has a blank category")
+        }
+
+        val sourceKey = sourceCategory?.id
+        val mappedName = sourceKey?.let { categoryNamesByKey[it] }
+        if (mappedName != null) return mappedName
+
+        val matchingCategories = existingCategories.filter {
+            normalizeCategoryKey(it.name) == normalizeCategoryKey(requestedName)
+        }
+        if (matchingCategories.size > 1) {
+            throw BackupValidationException("Ambiguous imported category '$requestedName'")
+        }
+        val existing = matchingCategories.singleOrNull()
+        if (existing != null) {
+            sourceKey?.let { categoryNamesByKey[it] = existing.name }
+            return existing.name
+        }
+
+        val created = CategoryEntity(id = UUID.randomUUID().toString(), name = requestedName)
+        insertCategory(created)
+        sourceKey?.let { categoryNamesByKey[it] = created.name }
+        return created.name
     }
 }

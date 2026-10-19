@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -35,6 +38,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +69,7 @@ import com.example.expensetracker.data.local.SplitGroupWithMembers
 import com.example.expensetracker.model.DraftMember
 import com.example.expensetracker.model.SplitGroupValidator
 import com.example.expensetracker.model.ValidationResult
+import com.example.expensetracker.ui.theme.AppSpacing
 import com.example.expensetracker.ui.theme.LocalAppColors
 import java.util.UUID
 
@@ -391,6 +398,8 @@ fun CreateOrEditSplitGroupScreen(
 
     var validationErrorText by remember { mutableStateOf<String?>(null) }
     var showDiscardConfirmDialog by remember { mutableStateOf(false) }
+    var hasAttemptedSave by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
 
     // Check if user made any edits compared to initial state
     val isDirty by remember(groupName, membersState) {
@@ -421,6 +430,7 @@ fun CreateOrEditSplitGroupScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(appColors.bg)
+            .imePadding()
     ) {
         TopAppBar(
             title = {
@@ -468,6 +478,7 @@ fun CreateOrEditSplitGroupScreen(
                         color = appColors.ink
                     )
                     Spacer(modifier = Modifier.height(8.dp))
+                    val groupNameHasError = hasAttemptedSave && groupName.trim().isBlank()
                     OutlinedTextField(
                         value = groupName,
                         onValueChange = {
@@ -476,6 +487,12 @@ fun CreateOrEditSplitGroupScreen(
                         },
                         placeholder = { Text("e.g. Trip to Goa, Flatmates") },
                         singleLine = true,
+                        isError = groupNameHasError,
+                        supportingText = {
+                            if (groupNameHasError) {
+                                Text("Group name is required", color = appColors.negative)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -529,92 +546,137 @@ fun CreateOrEditSplitGroupScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     membersState.forEachIndexed { index, member ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        if (index > 0) {
+                            Spacer(modifier = Modifier.height(AppSpacing.sm))
+                        }
+
+                        val trimmedName = member.name.trim()
+                        val isDuplicateName = trimmedName.isNotBlank() &&
+                            membersState.count { it.name.trim().equals(trimmedName, ignoreCase = true) } > 1
+                        val nameHasError = hasAttemptedSave && (trimmedName.isBlank() || isDuplicateName)
+                        val nameErrorMessage = when {
+                            !nameHasError -> null
+                            trimmedName.isBlank() -> "Name is required"
+                            else -> "Name must be unique"
+                        }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = appColors.surfaceAlt),
+                            border = BorderStroke(1.dp, if (nameHasError) appColors.negative else appColors.border)
                         ) {
-                            OutlinedTextField(
-                                value = member.name,
-                                onValueChange = { newName ->
-                                    membersState[index] = member.copy(name = newName)
-                                    validationErrorText = null
-                                },
-                                placeholder = { Text(if (member.isMe) "Your name (Me)" else "Member name") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.padding(AppSpacing.md)) {
+                                // Header label identifying this member
+                                Text(
+                                    text = if (member.isMe) "You" else "Member ${index + 1}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = appColors.inkFaint
+                                )
 
-                            if (!member.isMe) {
+                                Spacer(modifier = Modifier.height(AppSpacing.xs))
+
+                                // Row 1: full-width name field
                                 OutlinedTextField(
-                                    value = if (member.openingDebtPaise == 0L) "" else (member.openingDebtPaise / 100.0).toString(),
-                                    onValueChange = { value ->
-                                        val paise = value.toDoubleOrNull()?.let { Math.round(it * 100.0) } ?: 0L
-                                        membersState[index] = member.copy(openingDebtPaise = paise.coerceAtLeast(0L))
+                                    value = member.name,
+                                    onValueChange = { newName ->
+                                        membersState[index] = member.copy(name = newName)
                                         validationErrorText = null
                                     },
-                                    label = { Text("Existing owed") },
-                                    placeholder = { Text("₹0.00") },
+                                    placeholder = { Text(if (member.isMe) "Your name (Me)" else "Member name") },
                                     singleLine = true,
-                                    modifier = Modifier.width(110.dp)
-                                )
-                            }
-
-                            // "Me" Toggle Button
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        if (member.isMe) appColors.accent else appColors.surfaceAlt,
-                                        RoundedCornerShape(8.dp)
-                                    )
-                                    .clickable {
-                                        // Set this member as Me, and all others as not Me
-                                        membersState.indices.forEach { i ->
-                                            membersState[i] = membersState[i].copy(isMe = (i == index))
-                                        }
-                                        validationErrorText = null
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (member.isMe) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = appColors.accentInk,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                    }
-                                    Text(
-                                        text = "Me",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        color = if (member.isMe) appColors.accentInk else appColors.inkMuted
-                                    )
-                                }
-                            }
-
-                            // Remove member action button
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(appColors.surfaceAlt, RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        membersState.removeAt(index)
-                                        validationErrorText = null
+                                    isError = nameHasError,
+                                    supportingText = nameErrorMessage?.let { message ->
+                                        { Text(message, color = appColors.negative) }
                                     },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Remove member",
-                                    tint = appColors.negative,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.fillMaxWidth()
                                 )
+
+                                Spacer(modifier = Modifier.height(AppSpacing.sm))
+
+                                // Row 2: existing-owed amount, Me toggle, and remove action
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                                ) {
+                                    if (!member.isMe) {
+                                        OutlinedTextField(
+                                            value = if (member.openingDebtPaise == 0L) "" else (member.openingDebtPaise / 100.0).toString(),
+                                            onValueChange = { value ->
+                                                val paise = value.toDoubleOrNull()?.let { Math.round(it * 100.0) } ?: 0L
+                                                membersState[index] = member.copy(openingDebtPaise = paise.coerceAtLeast(0L))
+                                                validationErrorText = null
+                                            },
+                                            label = { Text("Existing owed") },
+                                            placeholder = { Text("₹0.00") },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Your balance is tracked from account transactions, not entered here.",
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                            color = appColors.inkFaint,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+
+                                    // "Me" toggle
+                                    FilterChip(
+                                        selected = member.isMe,
+                                        onClick = {
+                                            // Set this member as Me, and all others as not Me
+                                            membersState.indices.forEach { i ->
+                                                membersState[i] = membersState[i].copy(isMe = (i == index))
+                                            }
+                                            validationErrorText = null
+                                        },
+                                        label = {
+                                            Text("Me", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        },
+                                        leadingIcon = if (member.isMe) {
+                                            {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        } else null,
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = appColors.accent,
+                                            selectedLabelColor = appColors.accentInk,
+                                            selectedLeadingIconColor = appColors.accentInk,
+                                            containerColor = appColors.surface,
+                                            labelColor = appColors.inkMuted
+                                        ),
+                                        border = FilterChipDefaults.filterChipBorder(
+                                            enabled = true,
+                                            selected = member.isMe,
+                                            borderColor = appColors.border,
+                                            selectedBorderColor = appColors.accent
+                                        ),
+                                        modifier = Modifier.heightIn(min = AppSpacing.minTouchTarget)
+                                    )
+
+                                    // Remove member action, visually distinct via destructive tint
+                                    IconButton(
+                                        onClick = {
+                                            membersState.removeAt(index)
+                                            validationErrorText = null
+                                        },
+                                        modifier = Modifier.size(AppSpacing.minTouchTarget)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Remove member",
+                                            tint = appColors.negative,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -661,6 +723,9 @@ fun CreateOrEditSplitGroupScreen(
 
                 Button(
                     onClick = {
+                        if (isSaving) return@Button
+                        hasAttemptedSave = true
+                        isSaving = true
                         val result = onSaveGroup(
                             initialGroup?.group?.id,
                             groupName,
@@ -670,8 +735,10 @@ fun CreateOrEditSplitGroupScreen(
                             onCancel() // Close screen after successful save
                         } else {
                             validationErrorText = result.getFirstErrorMessage()
+                            isSaving = false
                         }
                     },
+                    enabled = !isSaving,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(

@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +30,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +44,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
+import com.example.expensetracker.ui.theme.AppSpacing
 import com.example.expensetracker.ui.theme.LocalAppColors
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,7 +64,7 @@ import com.example.expensetracker.data.local.CategoryEntity
 import com.example.expensetracker.data.local.CategoryMappingEntity
 import com.example.expensetracker.service.CategoryMapper
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ManagementScreen(
     categories: List<CategoryEntity>,
@@ -85,7 +89,7 @@ fun ManagementScreen(
     onDeletePaymentTemplate: (com.example.expensetracker.data.local.PaymentTemplateEntity) -> Unit = {},
     onSaveSplitGroup: (groupId: String?, name: String, members: List<com.example.expensetracker.model.DraftMember>) -> com.example.expensetracker.model.ValidationResult = { _, _, _ -> com.example.expensetracker.model.ValidationResult(false) },
     onDeleteSplitGroup: (com.example.expensetracker.data.local.SplitGroupEntity) -> Unit = {},
-    onSaveAccount: (id: String?, name: String, openingBalancePaise: Long, isPrimary: Boolean, accountNumber: String?) -> String? = { _, _, _, _, _ -> null },
+    onSaveAccount: (id: String?, name: String, currentBalancePaise: Long, isPrimary: Boolean, accountNumber: String?) -> String? = { _, _, _, _, _ -> null },
     onSetPrimaryAccount: (accountId: String) -> Unit = {},
     onSetAccountArchived: (accountId: String, isArchived: Boolean) -> Unit = { _, _ -> },
     onDeleteAccount: (com.example.expensetracker.data.local.AccountEntity) -> Unit = {},
@@ -160,158 +164,20 @@ fun ManagementScreen(
             ) {
                 val appColors = LocalAppColors.current
 
-                // Subtab Strip with horizontal scrolling for 5 tabs
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clickable { selectedTabIndex = 0 }
-                            .padding(bottom = 8.dp)
-                    ) {
-                        Column {
-                            Text(
-                                text = "Categories (${categories.size})",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (selectedTabIndex == 0) appColors.ink else appColors.inkFaint
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            if (selectedTabIndex == 0) {
-                                Box(
-                                    modifier = Modifier
-                                        .height(2.dp)
-                                        .width(70.dp)
-                                        .background(appColors.accent, RoundedCornerShape(1.dp))
-                                )
-                            }
-                        }
-                    }
+                val sections = listOf(
+                    ManageSection(0, "Categories", categories.size),
+                    ManageSection(1, "Regex mappings", mappings.size),
+                    ManageSection(2, "Templates", paymentTemplates.size),
+                    ManageSection(3, "Split groups", splitGroups.size),
+                    ManageSection(4, "Accounts", accountsWithBalances.size),
+                    ManageSection(5, "Backup & Export")
+                )
 
-                    Box(
-                        modifier = Modifier
-                            .clickable { selectedTabIndex = 1 }
-                            .padding(bottom = 8.dp)
-                    ) {
-                        Column {
-                            Text(
-                                text = "Regex mappings (${mappings.size})",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (selectedTabIndex == 1) appColors.ink else appColors.inkFaint
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            if (selectedTabIndex == 1) {
-                                Box(
-                                    modifier = Modifier
-                                        .height(2.dp)
-                                        .width(90.dp)
-                                        .background(appColors.accent, RoundedCornerShape(1.dp))
-                                )
-                            }
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clickable { selectedTabIndex = 2 }
-                            .padding(bottom = 8.dp)
-                    ) {
-                        Column {
-                            Text(
-                                text = "Templates (${paymentTemplates.size})",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (selectedTabIndex == 2) appColors.ink else appColors.inkFaint
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            if (selectedTabIndex == 2) {
-                                Box(
-                                    modifier = Modifier
-                                        .height(2.dp)
-                                        .width(70.dp)
-                                        .background(appColors.accent, RoundedCornerShape(1.dp))
-                                )
-                            }
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clickable { selectedTabIndex = 3 }
-                            .padding(bottom = 8.dp)
-                    ) {
-                        Column {
-                            Text(
-                                text = "Split groups (${splitGroups.size})",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (selectedTabIndex == 3) appColors.ink else appColors.inkFaint
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            if (selectedTabIndex == 3) {
-                                Box(
-                                    modifier = Modifier
-                                        .height(2.dp)
-                                        .width(75.dp)
-                                        .background(appColors.accent, RoundedCornerShape(1.dp))
-                                )
-                            }
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clickable { selectedTabIndex = 4 }
-                            .padding(bottom = 8.dp)
-                    ) {
-                        Column {
-                            Text(
-                                text = "Accounts (${accountsWithBalances.size})",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (selectedTabIndex == 4) appColors.ink else appColors.inkFaint
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            if (selectedTabIndex == 4) {
-                                Box(
-                                    modifier = Modifier
-                                        .height(2.dp)
-                                        .width(65.dp)
-                                        .background(appColors.accent, RoundedCornerShape(1.dp))
-                                )
-                            }
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clickable { selectedTabIndex = 5 }
-                            .padding(bottom = 8.dp)
-                    ) {
-                        Column {
-                            Text(
-                                text = "Backup & Export",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (selectedTabIndex == 5) appColors.ink else appColors.inkFaint
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            if (selectedTabIndex == 5) {
-                                Box(
-                                    modifier = Modifier
-                                        .height(2.dp)
-                                        .width(90.dp)
-                                        .background(appColors.accent, RoundedCornerShape(1.dp))
-                                )
-                            }
-                        }
-                    }
-                }
+                ManageSectionSelector(
+                    sections = sections,
+                    selectedIndex = selectedTabIndex,
+                    onSectionSelected = { selectedTabIndex = it }
+                )
 
                 when (selectedTabIndex) {
                     0 -> CategoryTabContent(
@@ -520,6 +386,75 @@ fun ManagementScreen(
                 }
             }
         )
+    }
+}
+
+private data class ManageSection(
+    val index: Int,
+    val label: String,
+    val count: Int? = null
+)
+
+// Fixed, wrapping section selector. Every section stays on-screen at once; nothing scrolls off.
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ManageSectionSelector(
+    sections: List<ManageSection>,
+    selectedIndex: Int,
+    onSectionSelected: (Int) -> Unit
+) {
+    val appColors = LocalAppColors.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
+    ) {
+        Text(
+            text = "Section",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp
+            ),
+            color = appColors.inkFaint
+        )
+        Spacer(modifier = Modifier.height(AppSpacing.xs))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+        ) {
+            sections.forEach { section ->
+                val selected = selectedIndex == section.index
+                FilterChip(
+                    selected = selected,
+                    onClick = { onSectionSelected(section.index) },
+                    label = {
+                        Text(
+                            text = if (section.count != null) "${section.label} (${section.count})" else section.label,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 12.5.sp
+                            )
+                        )
+                    },
+                    shape = RoundedCornerShape(100.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = appColors.accentSoft,
+                        selectedLabelColor = appColors.accent,
+                        containerColor = appColors.surfaceAlt,
+                        labelColor = appColors.inkMuted
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = selected,
+                        borderColor = appColors.border,
+                        selectedBorderColor = appColors.accent
+                    )
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(AppSpacing.sm))
+        HorizontalDivider(color = appColors.border)
     }
 }
 

@@ -32,6 +32,7 @@ import com.example.expensetracker.data.local.CategoryEntity
 import com.example.expensetracker.data.local.toEntity
 import com.example.expensetracker.model.AccountBalanceCalculator
 import com.example.expensetracker.model.Transaction
+import com.example.expensetracker.model.TransactionCategory
 import com.example.expensetracker.model.TransactionType
 import com.example.expensetracker.ui.components.BalanceCard
 import com.example.expensetracker.ui.components.CategoryDonutChart
@@ -112,17 +113,20 @@ fun DashboardScreen(
     val totalExpenseSum = expenseTransactions.sumOf { it.amount }
 
     val categorySpendingMap = expenseTransactions
-        .groupBy { it.category }
+        .groupBy { it.displayCategoryName }
         .mapValues { entry -> entry.value.sumOf { it.amount } }
 
     val donutItems = categorySpendingMap.entries
         .sortedByDescending { it.value }
         .take(4)
-        .map { (cat, amount) ->
+        .map { (categoryName, amount) ->
             val pct = if (totalExpenseSum > 0) ((amount / totalExpenseSum) * 100).toFloat() else 0f
-            val (_, color, _) = getCategoryIconAndColor(cat, appColors.isDark)
+            val enumCategory = runCatching {
+                TransactionCategory.valueOf(categoryName.trim().uppercase(java.util.Locale.ROOT))
+            }.getOrDefault(TransactionCategory.OTHER)
+            val (_, color, _) = getCategoryIconAndColor(enumCategory, appColors.isDark)
             CategorySpendingItem(
-                categoryName = cat.name.lowercase().replaceFirstChar { it.uppercase() },
+                categoryName = categoryName,
                 amount = amount,
                 percentage = pct,
                 color = color

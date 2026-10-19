@@ -517,7 +517,7 @@ fun AccountCardItem(
                 }
 
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(text = "Opening balance", fontSize = 11.sp, color = appColors.inkFaint)
+                    Text(text = "Legacy opening balance", fontSize = 11.sp, color = appColors.inkFaint)
                     Text(
                         text = CurrencyFormatter.format(account.openingBalancePaise / 100.0),
                         fontSize = 13.sp,
@@ -618,7 +618,7 @@ fun AccountCardItem(
 fun AddOrEditAccountDialog(
     initialAccount: AccountEntity? = null,
     onDismiss: () -> Unit,
-    onSave: (id: String?, name: String, openingBalancePaise: Long, isPrimary: Boolean, accountNumber: String?) -> String?
+    onSave: (id: String?, name: String, currentBalancePaise: Long, isPrimary: Boolean, accountNumber: String?) -> String?
 ) {
     val appColors = LocalAppColors.current
 
@@ -671,7 +671,7 @@ fun AddOrEditAccountDialog(
                         balanceText = it
                         errorMessage = null
                     },
-                    label = { Text("Opening Balance (₹)") },
+                    label = { Text("Current Balance (₹)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -709,7 +709,7 @@ fun AddOrEditAccountDialog(
                         return@TextButton
                     }
                     if (parsedBalanceDouble == null) {
-                        errorMessage = "Enter a valid opening balance."
+                        errorMessage = "Enter a valid current balance."
                         return@TextButton
                     }
 

@@ -119,7 +119,7 @@ fun TransactionItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                val categoryName = transaction.category.name.lowercase().replaceFirstChar { it.uppercase() }
+                val categoryName = transaction.displayCategoryName
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = categoryName,

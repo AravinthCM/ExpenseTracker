@@ -152,7 +152,7 @@ fun AnalyticsScreen(
     }
 
     val categorySpendingList = remember(expenseTransactions, categories) {
-        val groupedMap = expenseTransactions.groupBy { it.category.name }
+        val groupedMap = expenseTransactions.groupBy { it.displayCategoryName }
 
         groupedMap.entries.mapIndexed { index, entry ->
             val catNameFormatted = entry.key.lowercase().replaceFirstChar { it.uppercase() }
@@ -435,7 +435,7 @@ fun AnalyticsScreen(
     selectedDrillDownCategory?.let { catName ->
         val matchingTx = accountAndPeriodFilteredTransactions.filter {
             it.type == TransactionType.EXPENSE &&
-            it.category.name.equals(catName, ignoreCase = true)
+            it.displayCategoryName.equals(catName, ignoreCase = true)
         }
 
         CategoryDrillDownDialog(
