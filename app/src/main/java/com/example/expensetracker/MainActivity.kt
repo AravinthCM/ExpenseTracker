@@ -289,6 +289,7 @@ fun ExpenseTrackerApp(
                             expenseSplits = expenseSplits,
                             onEditTransaction = { transaction -> editingTransaction = transaction },
                             onDeleteTransaction = { transaction -> viewModel.deleteTransaction(transaction) },
+                            onRemoveSplit = { transactionId -> viewModel.removeSplitsForTransaction(transactionId) },
                             onSaveEqualSplit = { txId, groupId -> viewModel.createEqualExpenseSplit(txId, groupId) },
                             onSaveCustomSplit = { txId, groupId, customShares -> viewModel.createCustomExpenseSplit(txId, groupId, customShares) },
                             onUndoSplit = { splitId -> viewModel.deleteExpenseSplit(splitId) },
@@ -310,6 +311,7 @@ fun ExpenseTrackerApp(
                             onUndoRepayment = { repaymentId ->
                                 viewModel.deleteRepayment(repaymentId)
                             },
+                            onRemoveSplit = { splitId -> viewModel.removeSplit(splitId) },
                             onNavigateToTransactions = { currentScreen = Screen.Transactions }
                         )
                     }
@@ -366,17 +368,41 @@ fun ExpenseTrackerApp(
                                 viewModel.assignUnassignedTransactionIdsToAccount(transactionIds, accountId)
                             },
                             onAddReconciliationExpense = { account, amountPaise, timestamp ->
-                                reconciliationSuggestedTransaction = Transaction(
-                                    id = java.util.UUID.randomUUID().toString(),
-                                    title = "Missing expense",
-                                    amount = amountPaise / 100.0,
-                                    type = TransactionType.EXPENSE,
-                                    category = TransactionCategory.OTHER,
-                                    date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(timestamp)),
-                                    source = TransactionSource.MANUAL,
-                                    timestamp = timestamp,
-                                    accountId = account.id
+                                val candidate = com.example.expensetracker.model.MissingTransactionCandidateFinder.findCandidate(
+                                    targetAmountPaise = amountPaise,
+                                    observationTimestampMs = timestamp,
+                                    accountSuffix = account.accountNumber,
+                                    testNotifications = testNotifications,
+                                    existingReferenceNumbers = transactions.mapNotNull { it.referenceNumber }.toSet()
                                 )
+                                reconciliationSuggestedTransaction = if (candidate != null) {
+                                    Transaction(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        title = candidate.merchant?.takeIf { it.isNotBlank() } ?: "Missing expense",
+                                        amount = candidate.amount,
+                                        type = TransactionType.EXPENSE,
+                                        category = TransactionCategory.OTHER,
+                                        date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(candidate.timestamp)),
+                                        source = TransactionSource.NOTIFICATION,
+                                        timestamp = candidate.timestamp,
+                                        accountId = account.id,
+                                        referenceNumber = candidate.referenceNumber
+                                    )
+                                } else {
+                                    // No captured evidence identifies this transaction: let the user enter it manually
+                                    // instead of inventing a merchant/date from the discrepancy alone.
+                                    Transaction(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        title = "",
+                                        amount = amountPaise / 100.0,
+                                        type = TransactionType.EXPENSE,
+                                        category = TransactionCategory.OTHER,
+                                        date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(timestamp)),
+                                        source = TransactionSource.MANUAL,
+                                        timestamp = timestamp,
+                                        accountId = account.id
+                                    )
+                                }
                             },
                             onReviewReconciliationTransactions = { accountId ->
                                 viewModel.selectAccount(accountId)

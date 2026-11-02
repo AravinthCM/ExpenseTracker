@@ -270,6 +270,15 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             val obs = balanceObservationDao.getObservationById(observationId) ?: return@launch
             balanceObservationDao.resolveObservation(observationId, accountId)
 
+            val resolvedObs = obs.copy(accountId = accountId, isResolved = true)
+            val account = accountDao.getAccountByIdSync(accountId)
+            val updatedAccount = account?.let {
+                com.example.expensetracker.model.BalanceObservationApplier.applyIfNewer(it, resolvedObs)
+            }
+            if (updatedAccount != null) {
+                accountDao.updateAccount(updatedAccount)
+            }
+
             if (rememberMapping && !obs.source.isBlank()) {
                 val mapping = com.example.expensetracker.data.local.SourceAccountMappingEntity(
                     id = UUID.randomUUID().toString(),
@@ -716,6 +725,30 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch(Dispatchers.IO) {
             expenseSplitDao.deleteSplitById(splitId)
         }
+    }
+
+    fun removeSplit(splitId: String): String? = runBlocking(Dispatchers.IO) {
+        val split = expenseSplitDao.getAllSplitsWithSharesSync().firstOrNull { it.split.id == splitId }
+            ?: return@runBlocking null
+        if (repaymentDao.countAllocationsForSplitSync(splitId) > 0) {
+            return@runBlocking "This split has repayment allocations and cannot be removed safely. Undo or review those repayments first."
+        }
+        db.runInTransaction {
+            expenseSplitDao.deleteSplitById(split.split.id)
+        }
+        null
+    }
+
+    fun removeSplitsForTransaction(transactionId: String): String? = runBlocking(Dispatchers.IO) {
+        val splits = expenseSplitDao.getAllSplitsWithSharesSync()
+            .filter { it.split.transactionId == transactionId }
+        if (splits.any { repaymentDao.countAllocationsForSplitSync(it.split.id) > 0 }) {
+            return@runBlocking "This transaction has repayment allocations and cannot be removed from its split safely. Undo or review those repayments first."
+        }
+        db.runInTransaction {
+            splits.forEach { expenseSplitDao.deleteSplitById(it.split.id) }
+        }
+        null
     }
 
     fun recordRepayment(

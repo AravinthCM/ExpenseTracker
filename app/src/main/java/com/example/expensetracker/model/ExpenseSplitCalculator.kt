@@ -357,8 +357,9 @@ object ExpenseSplitCalculator {
         val memberBalances = groupsWithMembers.flatMap { it.members }.filter { !it.isMe }.mapNotNull { member ->
             val group = groupMap[member.groupId] ?: return@mapNotNull null
             val itemizedList = memberItemizedMap[member.id] ?: emptyList()
-            val totalOwedPaise = itemizedList.sumOf { it.remainingAmountPaise }
             val unallocatedExcess = unallocatedByMemberId[member.id] ?: 0L
+            val initialDebtRemaining = maxOf(0L, member.openingDebtPaise - unallocatedExcess)
+            val totalOwedPaise = initialDebtRemaining + itemizedList.sumOf { it.remainingAmountPaise }
 
             if (totalOwedPaise <= 0L && unallocatedExcess <= 0L) return@mapNotNull null
 

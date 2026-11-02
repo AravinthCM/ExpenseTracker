@@ -136,8 +136,12 @@ fun ManagementScreen(
     var deletingGroup by remember { mutableStateOf<com.example.expensetracker.data.local.SplitGroupEntity?>(null) }
 
     if (showAddAccountDialog || editingAccount != null) {
+        val editingCurrentBalancePaise = editingAccount?.let { acc ->
+            accountsWithBalances.firstOrNull { it.account.id == acc.id }?.currentBalancePaise
+        }
         com.example.expensetracker.ui.components.AddOrEditAccountDialog(
             initialAccount = editingAccount,
+            initialCurrentBalancePaise = editingCurrentBalancePaise,
             onDismiss = {
                 showAddAccountDialog = false
                 editingAccount = null

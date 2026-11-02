@@ -400,6 +400,11 @@ fun AccountsTabContent(
     }
 }
 
+private fun formatObservationTimestamp(timestamp: Long): String {
+    val formatter = java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault())
+    return formatter.format(java.util.Date(timestamp))
+}
+
 @Composable
 fun AccountCardItem(
     accountWithBalance: AccountWithBalance,
@@ -514,6 +519,13 @@ fun AccountCardItem(
                         fontWeight = FontWeight.Bold,
                         color = if (accountWithBalance.currentBalancePaise >= 0) appColors.positive else appColors.negative
                     )
+                    if (account.balanceBaselineTimestamp != null) {
+                        Text(
+                            text = "Last synced: ${formatObservationTimestamp(account.balanceBaselineTimestamp)}",
+                            fontSize = 10.5.sp,
+                            color = appColors.inkFaint
+                        )
+                    }
                 }
 
                 Column(horizontalAlignment = Alignment.End) {
@@ -559,6 +571,25 @@ fun AccountCardItem(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = reconciliationResult.statusMessage,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = appColors.negative
+                        )
+                    }
+                    // Never show a bare discrepancy warning without the actual numbers behind it.
+                    Column(modifier = Modifier.padding(top = 6.dp)) {
+                        Text(
+                            text = "Bank balance: ₹${CurrencyFormatter.format(reconciliationResult.observedBalanceDouble ?: 0.0)} (as of ${formatObservationTimestamp(reconciliationResult.latestObservation.timestamp)})",
+                            fontSize = 11.sp,
+                            color = appColors.ink
+                        )
+                        Text(
+                            text = "Recorded balance: ₹${CurrencyFormatter.format(reconciliationResult.expectedBalanceDouble)}",
+                            fontSize = 11.sp,
+                            color = appColors.ink
+                        )
+                        Text(
+                            text = "Difference: ₹${CurrencyFormatter.format(kotlin.math.abs(reconciliationResult.discrepancyDouble ?: 0.0))} unexplained",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = appColors.negative
@@ -617,6 +648,7 @@ fun AccountCardItem(
 @Composable
 fun AddOrEditAccountDialog(
     initialAccount: AccountEntity? = null,
+    initialCurrentBalancePaise: Long? = null,
     onDismiss: () -> Unit,
     onSave: (id: String?, name: String, currentBalancePaise: Long, isPrimary: Boolean, accountNumber: String?) -> String?
 ) {
@@ -624,7 +656,13 @@ fun AddOrEditAccountDialog(
 
     var nameText by remember { mutableStateOf(initialAccount?.name ?: "") }
     var accountNumberText by remember { mutableStateOf(initialAccount?.accountNumber ?: "") }
-    var balanceText by remember { mutableStateOf(initialAccount?.let { (it.openingBalancePaise / 100.0).toString() } ?: "0") }
+    // Prefill with the account's actual displayed Current balance (baseline + ledger since baseline),
+    // NOT the legacy opening balance, so editing doesn't appear to reset the balance to ₹0.
+    val prefillBalancePaise = com.example.expensetracker.model.AccountBalanceCalculator.resolveEditPrefillBalancePaise(
+        initialAccount,
+        initialCurrentBalancePaise
+    )
+    var balanceText by remember { mutableStateOf((prefillBalancePaise / 100.0).toString()) }
     var isPrimary by remember { mutableStateOf(initialAccount?.isPrimary ?: false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -671,10 +709,16 @@ fun AddOrEditAccountDialog(
                         balanceText = it
                         errorMessage = null
                     },
-                    label = { Text("Current Balance (₹)") },
+                    label = { Text("Current Balance (₹) — manual override") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "This sets a manual balance checkpoint as of now. It does not edit or delete any past transactions. " +
+                        "A newer captured bank balance will still take precedence automatically.",
+                    fontSize = 11.sp,
+                    color = appColors.inkFaint
                 )
 
                 Row(

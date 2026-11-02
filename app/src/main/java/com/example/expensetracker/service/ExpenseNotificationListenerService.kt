@@ -197,6 +197,17 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
                             )
                             db.balanceObservationDao().insert(observation)
                             Log.d(TAG, "BALANCE_OBSERVATION_SAVED: id=${observation.id} accountId=$identifiedAccountId balance=₹$observedBalance resolved=${observation.isResolved}")
+
+                            if (identifiedAccountId != null) {
+                                val targetAccount = db.accountDao().getAccountByIdSync(identifiedAccountId)
+                                val updatedAccount = targetAccount?.let {
+                                    com.example.expensetracker.model.BalanceObservationApplier.applyIfNewer(it, observation)
+                                }
+                                if (updatedAccount != null) {
+                                    db.accountDao().updateAccount(updatedAccount)
+                                    Log.d(TAG, "ACCOUNT_BALANCE_BASELINE_UPDATED: accountId=$identifiedAccountId newBalancePaise=${updatedAccount.balanceBaselinePaise}")
+                                }
+                            }
                         } else {
                             Log.d(TAG, "BALANCE_OBSERVATION_SKIPPED: Duplicate observation for ref=$ref / balance=₹$observedBalance")
                         }

@@ -1,8 +1,10 @@
 package com.example.expensetracker.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +68,7 @@ import com.example.expensetracker.data.local.SplitGroupWithMembers
 import com.example.expensetracker.model.ExpenseSplitCalculator
 import com.example.expensetracker.model.MemberDebtSummary
 import com.example.expensetracker.model.RepaymentRecordResult
+import com.example.expensetracker.model.SplitHistoryItem
 import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.model.TransactionType
 import com.example.expensetracker.ui.theme.LocalAppColors
@@ -75,7 +78,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettleUpScreen(
     expenseSplits: List<ExpenseSplitWithShares>,
@@ -84,6 +87,7 @@ fun SettleUpScreen(
     repayments: List<RepaymentWithAllocations> = emptyList(),
     onRecordRepayment: (groupId: String, memberId: String, amountPaise: Long, paymentDate: String, linkedTransactionId: String?, note: String?) -> RepaymentRecordResult = { _, _, _, _, _, _ -> RepaymentRecordResult.Error("") },
     onUndoRepayment: (repaymentId: String) -> Unit = {},
+    onRemoveSplit: (splitId: String) -> String? = { null },
     onNavigateToTransactions: () -> Unit = {}
 ) {
     val appColors = LocalAppColors.current
@@ -94,6 +98,8 @@ fun SettleUpScreen(
 
     var selectedMemberSummary by remember { mutableStateOf<MemberDebtSummary?>(null) }
     var repaymentMemberSummary by remember { mutableStateOf<MemberDebtSummary?>(null) }
+    var splitRemovalTarget by remember { mutableStateOf<SplitHistoryItem?>(null) }
+    var splitRemovalError by remember { mutableStateOf<String?>(null) }
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Balances, 1 = History, 2 = Repayment History
 
     var undoSnackbarInfo by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -180,7 +186,7 @@ fun SettleUpScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // 2. Empty State View if no splits exist at all
-            if (expenseSplits.isEmpty()) {
+            if (expenseSplits.isEmpty() && ledger.memberBalances.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -456,7 +462,15 @@ fun SettleUpScreen(
                     ) {
                         items(ledger.splitHistory, key = { it.splitId }) { historyItem ->
                             Card(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onLongClick = {
+                                            splitRemovalError = null
+                                            splitRemovalTarget = historyItem
+                                        }
+                                    ),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(containerColor = appColors.surface),
                                 border = BorderStroke(1.dp, appColors.border)
@@ -810,6 +824,32 @@ fun SettleUpScreen(
                 }
             },
             dismissButton = {}
+        )
+    }
+
+    splitRemovalTarget?.let { historyItem ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { splitRemovalTarget = null },
+            title = { Text("Remove Split?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${historyItem.transactionTitle} will remain as a transaction, but its ${historyItem.groupName} split allocations will be removed.")
+                    splitRemovalError?.let { Text(it, color = appColors.negative, fontSize = 12.sp) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val error = onRemoveSplit(historyItem.splitId)
+                    if (error == null) {
+                        splitRemovalTarget = null
+                    } else {
+                        splitRemovalError = error
+                    }
+                }) { Text("Remove Split", color = appColors.negative) }
+            },
+            dismissButton = {
+                TextButton(onClick = { splitRemovalTarget = null }) { Text("Cancel") }
+            }
         )
     }
 

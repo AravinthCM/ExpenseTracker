@@ -41,4 +41,17 @@ object AccountBalanceCalculator {
             .filter { !it.isArchived }
             .sumOf { calculateAccountBalancePaise(it, transactions) }
     }
+
+    /**
+     * The value the Edit Account dialog's balance field should be prefilled with: the account's
+     * actual displayed Current balance (baseline + ledger since baseline), never the legacy
+     * opening balance, so editing never silently appears to reset the account to ₹0.
+     */
+    fun resolveEditPrefillBalancePaise(
+        account: AccountEntity?,
+        knownCurrentBalancePaise: Long?
+    ): Long {
+        if (account == null) return 0L
+        return knownCurrentBalancePaise ?: account.balanceBaselinePaise ?: account.openingBalancePaise
+    }
 }

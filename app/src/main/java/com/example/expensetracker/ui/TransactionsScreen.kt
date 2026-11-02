@@ -72,6 +72,7 @@ fun TransactionsScreen(
     expenseSplits: List<ExpenseSplitWithShares> = emptyList(),
     onEditTransaction: (Transaction) -> Unit = {},
     onDeleteTransaction: (Transaction) -> Unit = {},
+    onRemoveSplit: (transactionId: String) -> String? = { null },
     onSaveEqualSplit: (transactionId: String, groupId: String) -> SplitCalculationResult = { _, _ -> SplitCalculationResult.Error("") },
     onSaveCustomSplit: (transactionId: String, groupId: String, customSharesPaise: Map<String, Long>) -> SplitCalculationResult = { _, _, _ -> SplitCalculationResult.Error("") },
     onUndoSplit: (splitId: String) -> Unit = {},
@@ -81,6 +82,8 @@ fun TransactionsScreen(
 
     var viewingDetailsTransaction by remember { mutableStateOf<Transaction?>(null) }
     var menuTransaction by remember { mutableStateOf<Transaction?>(null) }
+    var confirmingSplitRemoval by remember { mutableStateOf<Transaction?>(null) }
+    var splitRemovalError by remember { mutableStateOf<String?>(null) }
 
     // Split Flow States
     var selectedSplitTransaction by remember { mutableStateOf<Transaction?>(null) }
@@ -382,6 +385,40 @@ fun TransactionsScreen(
                         }
                     }
 
+                    if ((splitCountByTxId[tx.id] ?: 0) > 0) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    menuTransaction = null
+                                    splitRemovalError = null
+                                    confirmingSplitRemoval = tx
+                                },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = appColors.surfaceAlt),
+                            border = BorderStroke(1.dp, appColors.border)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = null,
+                                    tint = appColors.accent,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("Remove Split", fontWeight = FontWeight.Bold, color = appColors.ink)
+                                    Text("Keep the transaction and remove its split allocations", fontSize = 11.5.sp, color = appColors.inkFaint)
+                                }
+                            }
+                        }
+                    }
+
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -452,6 +489,32 @@ fun TransactionsScreen(
                 TextButton(onClick = { menuTransaction = null }) {
                     Text("Cancel", color = appColors.ink)
                 }
+            }
+        )
+    }
+
+    confirmingSplitRemoval?.let { tx ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmingSplitRemoval = null },
+            title = { Text("Remove Split?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${tx.title} will remain in Transactions, but its split allocations will be removed.")
+                    splitRemovalError?.let { Text(it, color = appColors.negative, fontSize = 12.sp) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val error = onRemoveSplit(tx.id)
+                    if (error == null) {
+                        confirmingSplitRemoval = null
+                    } else {
+                        splitRemovalError = error
+                    }
+                }) { Text("Remove Split", color = appColors.negative) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingSplitRemoval = null }) { Text("Cancel") }
             }
         )
     }
