@@ -133,7 +133,6 @@ fun ExpenseTrackerApp(
     var isDarkTheme by rememberSaveable { mutableStateOf(systemDark) }
 
     var currentScreen by rememberSaveable { mutableStateOf(Screen.Overview) }
-    var managementInitialTab by remember { mutableStateOf(0) }
     var sampleForTemplate by remember { mutableStateOf<String?>(null) }
 
     var showAddSheet by remember { mutableStateOf(false) }
@@ -301,7 +300,7 @@ fun ExpenseTrackerApp(
                             accountsWithBalances = accountsWithBalances,
                             transactions = transactions,
                             unassignedTransactionCount = unassignedTransactionCount,
-                            initialSelectedTab = managementInitialTab,
+                            initialSelectedTab = -1,
                             initialSampleForTemplate = sampleForTemplate,
                             onAddCategory = { name -> viewModel.addCategory(name) },
                             onUpdateCategory = { cat, newName -> viewModel.updateCategory(cat, newName) },
@@ -344,7 +343,6 @@ fun ExpenseTrackerApp(
                             onClearAll = { viewModel.clearTestNotifications() },
                             onUseAsTemplate = { text ->
                                 sampleForTemplate = text
-                                managementInitialTab = 2
                                 currentScreen = Screen.Management
                             },
                             onNavigateBack = { currentScreen = Screen.Overview }
