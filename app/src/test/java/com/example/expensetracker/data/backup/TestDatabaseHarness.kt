@@ -25,6 +25,8 @@ class TestDatabaseHarness : AppDatabase() {
     val paymentTemplatesTable = mutableListOf<PaymentTemplateEntity>()
     val balanceObservationsTable = mutableListOf<BalanceObservationEntity>()
     val sourceAccountMappingsTable = mutableListOf<SourceAccountMappingEntity>()
+    val gPayRequestsTable = mutableListOf<GPayRequestEntity>()
+    val gPayMemberMappingsTable = mutableListOf<GPayMemberMappingEntity>()
 
     var enforceForeignKeys = true
 
@@ -553,6 +555,28 @@ class TestDatabaseHarness : AppDatabase() {
         override fun pruneOldRecords() {}
     }
 
+    override fun gPayRequestDao(): GPayRequestDao = object : GPayRequestDao {
+        override fun getAllRequests(): Flow<List<GPayRequestEntity>> = flowOf(gPayRequestsTable.toList())
+        override fun getAllRequestsSync(): List<GPayRequestEntity> = gPayRequestsTable.toList()
+        override fun findByRequestKeySync(requestKey: String): GPayRequestEntity? = gPayRequestsTable.firstOrNull { it.requestKey == requestKey }
+        override fun getByIdSync(id: String): GPayRequestEntity? = gPayRequestsTable.firstOrNull { it.id == id }
+        override fun upsert(entity: GPayRequestEntity) {
+            gPayRequestsTable.removeAll { it.id == entity.id }
+            gPayRequestsTable.add(entity)
+        }
+        override fun deleteById(id: String) { gPayRequestsTable.removeAll { it.id == id } }
+    }
+
+    override fun gPayMemberMappingDao(): GPayMemberMappingDao = object : GPayMemberMappingDao {
+        override fun getAllMappings(): Flow<List<GPayMemberMappingEntity>> = flowOf(gPayMemberMappingsTable.toList())
+        override fun getAllMappingsSync(): List<GPayMemberMappingEntity> = gPayMemberMappingsTable.toList()
+        override fun upsert(entity: GPayMemberMappingEntity) {
+            gPayMemberMappingsTable.removeAll { it.id == entity.id }
+            gPayMemberMappingsTable.add(entity)
+        }
+        override fun deleteById(id: String) { gPayMemberMappingsTable.removeAll { it.id == id } }
+    }
+
     override fun createInvalidationTracker(): androidx.room.InvalidationTracker {
         return androidx.room.InvalidationTracker(this, "accounts", "categories", "transactions")
     }
@@ -572,5 +596,7 @@ class TestDatabaseHarness : AppDatabase() {
         paymentTemplatesTable.clear()
         balanceObservationsTable.clear()
         sourceAccountMappingsTable.clear()
+        gPayRequestsTable.clear()
+        gPayMemberMappingsTable.clear()
     }
 }

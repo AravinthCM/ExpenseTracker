@@ -96,6 +96,63 @@ object ExpenseSplitCalculator {
         return SplitCalculationResult.Success(splitEntity, shares)
     }
 
+    /**
+     * Same deterministic equal-split algorithm as [calculateEqualSplit], but allows any group
+     * member (not just "Me") to be the payer. Used for expenses captured from a GPay request where
+     * the requester paid for something and is asking others to reimburse their share.
+     */
+    fun calculateEqualSplitForPayer(
+        transaction: TransactionEntity,
+        groupWithMembers: SplitGroupWithMembers,
+        payerMemberId: String
+    ): SplitCalculationResult {
+        if (!transaction.type.equals("EXPENSE", ignoreCase = true)) {
+            return SplitCalculationResult.Error("Only EXPENSE transactions can be split.")
+        }
+
+        val members = groupWithMembers.members
+        if (members.size < 2) {
+            return SplitCalculationResult.Error("Split group must have at least 2 members.")
+        }
+
+        val payerMember = members.firstOrNull { it.id == payerMemberId }
+            ?: return SplitCalculationResult.Error("Payer is not a member of this group.")
+
+        val totalPaise = rupeesToPaise(transaction.amount)
+        if (totalPaise <= 0) {
+            return SplitCalculationResult.Error("Transaction amount must be greater than zero.")
+        }
+
+        val splitId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+
+        val sortedMembers = members.sortedBy { it.id }
+        val numMembers = sortedMembers.size
+        val baseSharePaise = totalPaise / numMembers
+        val remainderPaise = (totalPaise % numMembers).toInt()
+
+        val shares = sortedMembers.mapIndexed { index, member ->
+            val extra = if (index < remainderPaise) 1L else 0L
+            ExpenseSplitShareEntity(
+                id = UUID.randomUUID().toString(),
+                splitId = splitId,
+                memberId = member.id,
+                shareAmountPaise = baseSharePaise + extra
+            )
+        }
+
+        val splitEntity = ExpenseSplitEntity(
+            id = splitId,
+            transactionId = transaction.id,
+            groupId = groupWithMembers.group.id,
+            amountPaise = totalPaise,
+            payerMemberId = payerMember.id,
+            createdAt = now
+        )
+
+        return SplitCalculationResult.Success(splitEntity, shares)
+    }
+
     fun calculateCustomSplit(
         transaction: TransactionEntity,
         groupWithMembers: SplitGroupWithMembers,
@@ -163,26 +220,101 @@ object ExpenseSplitCalculator {
         return SplitCalculationResult.Success(splitEntity, shares)
     }
 
+    /** Same as [calculateCustomSplit], but allows any group member (not just "Me") to be the payer. */
+    fun calculateCustomSplitForPayer(
+        transaction: TransactionEntity,
+        groupWithMembers: SplitGroupWithMembers,
+        payerMemberId: String,
+        customSharesPaise: Map<String, Long>
+    ): SplitCalculationResult {
+        if (!transaction.type.equals("EXPENSE", ignoreCase = true)) {
+            return SplitCalculationResult.Error("Only EXPENSE transactions can be split.")
+        }
+
+        val members = groupWithMembers.members
+        if (members.size < 2) {
+            return SplitCalculationResult.Error("Split group must have at least 2 members.")
+        }
+
+        val payerMember = members.firstOrNull { it.id == payerMemberId }
+            ?: return SplitCalculationResult.Error("Payer is not a member of this group.")
+
+        val totalPaise = rupeesToPaise(transaction.amount)
+        if (totalPaise <= 0) {
+            return SplitCalculationResult.Error("Transaction amount must be greater than zero.")
+        }
+
+        val groupMemberIds = members.map { it.id }.toSet()
+        if (customSharesPaise.keys != groupMemberIds) {
+            return SplitCalculationResult.Error("Every group member must have exactly one custom share allocated.")
+        }
+        if (customSharesPaise.values.any { it <= 0 }) {
+            return SplitCalculationResult.Error("Share amounts must be greater than zero.")
+        }
+        val customSum = customSharesPaise.values.sum()
+        if (customSum != totalPaise) {
+            return SplitCalculationResult.Error("Sum of custom shares ($customSum paise) does not match expense total ($totalPaise paise).")
+        }
+
+        val splitId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+
+        val shares = members.map { member ->
+            ExpenseSplitShareEntity(
+                id = UUID.randomUUID().toString(),
+                splitId = splitId,
+                memberId = member.id,
+                shareAmountPaise = customSharesPaise[member.id]!!
+            )
+        }
+
+        val splitEntity = ExpenseSplitEntity(
+            id = splitId,
+            transactionId = transaction.id,
+            groupId = groupWithMembers.group.id,
+            amountPaise = totalPaise,
+            payerMemberId = payerMember.id,
+            createdAt = now
+        )
+
+        return SplitCalculationResult.Success(splitEntity, shares)
+    }
+
+    /**
+     * Net amount each non-"Me" member owes (positive) or is owed by (negative) "Me", relative to
+     * the user. Generalizes beyond the original "Me always pays" assumption: a split whose payer is
+     * a non-"Me" member (e.g. a GPay-captured expense the requester paid for) reduces that member's
+     * net balance by "Me"'s share of that expense, since the user now owes the payer that amount.
+     */
     fun calculateOutstandingBalances(
         splitsWithShares: List<ExpenseSplitWithShares>,
         members: List<SplitGroupMemberEntity>
     ): List<MemberBalance> {
-        val memberMap = members.associateBy { it.id }
         val meMemberIds = members.filter { it.isMe }.map { it.id }.toSet()
+    val nonMeMemberIds = members.filter { !it.isMe }.map { it.id }.toSet()
 
         val balances = mutableMapOf<String, Long>()
-
-        members.filter { !it.isMe && it.openingDebtPaise > 0L }.forEach { member ->
-            balances[member.id] = member.openingDebtPaise
-        }
+        members.filter { !it.isMe }.forEach { member -> balances[member.id] = member.openingDebtPaise }
 
         for (splitWithShares in splitsWithShares) {
             val payerId = splitWithShares.split.payerMemberId
-            for (share in splitWithShares.shares) {
-                // If the payer is Me, non-Me members owe their allocated shares to Me
-                if (share.memberId != payerId && meMemberIds.contains(payerId)) {
-                    val current = balances.getOrDefault(share.memberId, 0L)
-                    balances[share.memberId] = current + share.shareAmountPaise
+            when {
+                meMemberIds.contains(payerId) -> {
+                    // "Me" paid: every other member owes their allocated share to "Me".
+                    for (share in splitWithShares.shares) {
+                        if (share.memberId != payerId) {
+                            val current = balances.getOrDefault(share.memberId, 0L)
+                            balances[share.memberId] = current + share.shareAmountPaise
+                        }
+                    }
+                }
+                nonMeMemberIds.contains(payerId) -> {
+                    // A non-"Me" member paid: "Me"'s own share becomes money "Me" owes that payer.
+                    val meShare = splitWithShares.shares.firstOrNull { meMemberIds.contains(it.memberId) }
+                    if (meShare != null) {
+                        val current = balances.getOrDefault(payerId, 0L)
+                        balances[payerId] = current - meShare.shareAmountPaise
+                    }
                 }
             }
         }

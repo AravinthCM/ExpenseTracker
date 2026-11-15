@@ -88,7 +88,9 @@ fun SettleUpScreen(
     onRecordRepayment: (groupId: String, memberId: String, amountPaise: Long, paymentDate: String, linkedTransactionId: String?, note: String?) -> RepaymentRecordResult = { _, _, _, _, _, _ -> RepaymentRecordResult.Error("") },
     onUndoRepayment: (repaymentId: String) -> Unit = {},
     onRemoveSplit: (splitId: String) -> String? = { null },
-    onNavigateToTransactions: () -> Unit = {}
+    onNavigateToTransactions: () -> Unit = {},
+    gPayPendingRequestCount: Int = 0,
+    onOpenGPayRequests: () -> Unit = {}
 ) {
     val appColors = LocalAppColors.current
 
@@ -179,6 +181,22 @@ fun SettleUpScreen(
                                 color = appColors.inkFaint
                             )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedButton(
+                        onClick = onOpenGPayRequests,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, appColors.border)
+                    ) {
+                        Text(
+                            text = if (gPayPendingRequestCount > 0) "GPay Requests ($gPayPendingRequestCount pending)" else "GPay Requests",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.5.sp,
+                            color = appColors.ink
+                        )
                     }
                 }
             }

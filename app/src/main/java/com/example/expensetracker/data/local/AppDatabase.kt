@@ -25,9 +25,11 @@ import java.util.concurrent.Executors
         RepaymentAllocationEntity::class,
         AccountEntity::class,
         BalanceObservationEntity::class,
-        SourceAccountMappingEntity::class
+        SourceAccountMappingEntity::class,
+        GPayRequestEntity::class,
+        GPayMemberMappingEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -44,6 +46,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
     abstract fun balanceObservationDao(): BalanceObservationDao
     abstract fun sourceAccountMappingDao(): SourceAccountMappingDao
+    abstract fun gPayRequestDao(): GPayRequestDao
+    abstract fun gPayMemberMappingDao(): GPayMemberMappingDao
 
     companion object {
         @Volatile
@@ -372,6 +376,63 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `gpay_requests` (
+                        `id` TEXT NOT NULL,
+                        `requestKey` TEXT NOT NULL,
+                        `packageName` TEXT NOT NULL,
+                        `notificationKey` TEXT,
+                        `requesterRawName` TEXT NOT NULL,
+                        `requesterNormalizedName` TEXT NOT NULL,
+                        `amountPaise` INTEGER NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `groupNameRaw` TEXT,
+                        `originalText` TEXT NOT NULL,
+                        `postTime` INTEGER NOT NULL,
+                        `capturedAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `matchedGroupId` TEXT,
+                        `matchedMemberId` TEXT,
+                        `matchStatus` TEXT NOT NULL,
+                        `processingStatus` TEXT NOT NULL,
+                        `linkedTransactionId` TEXT,
+                        `linkedSplitId` TEXT,
+                        `paymentConfirmationTransactionId` TEXT,
+                        `repaymentId` TEXT,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`matchedGroupId`) REFERENCES `split_groups`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`matchedMemberId`) REFERENCES `split_group_members`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`linkedTransactionId`) REFERENCES `transactions`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_gpay_requests_requestKey` ON `gpay_requests` (`requestKey`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_gpay_requests_matchedGroupId` ON `gpay_requests` (`matchedGroupId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_gpay_requests_matchedMemberId` ON `gpay_requests` (`matchedMemberId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_gpay_requests_linkedTransactionId` ON `gpay_requests` (`linkedTransactionId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `gpay_member_mappings` (
+                        `id` TEXT NOT NULL,
+                        `groupId` TEXT NOT NULL,
+                        `memberId` TEXT NOT NULL,
+                        `normalizedRequesterName` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`groupId`) REFERENCES `split_groups`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`memberId`) REFERENCES `split_group_members`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_gpay_member_mappings_groupId_normalizedRequesterName` ON `gpay_member_mappings` (`groupId`, `normalizedRequesterName`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_gpay_member_mappings_memberId` ON `gpay_member_mappings` (`memberId`)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -379,7 +440,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "expense_tracker_db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)

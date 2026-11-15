@@ -134,6 +134,8 @@ fun ExpenseTrackerApp(
     val reconciliationResults by viewModel.reconciliationResultsState.collectAsState()
     val backupExportState by viewModel.backupExportState.collectAsState()
     val backupImportState by viewModel.backupImportState.collectAsState()
+    val gPayRequests by viewModel.gPayRequestsState.collectAsState()
+    val gPayMemberMappings by viewModel.gPayMemberMappingsState.collectAsState()
 
     val unassignedTransactionCount = remember(transactions) {
         transactions.count { it.accountId == null }
@@ -152,6 +154,7 @@ fun ExpenseTrackerApp(
     var reconciliationSuggestedTransaction by remember { mutableStateOf<Transaction?>(null) }
     var selectedDetailTransaction by remember { mutableStateOf<Transaction?>(null) }
     var showSplash by rememberSaveable { mutableStateOf(true) }
+    var showGPayRequests by remember { mutableStateOf(false) }
 
         ExpenseTrackerTheme(darkTheme = isDarkTheme) {
         val appColors = LocalAppColors.current
@@ -300,20 +303,41 @@ fun ExpenseTrackerApp(
                         )
                     }
                     Screen.SettleUp -> {
-                        SettleUpScreen(
-                            expenseSplits = expenseSplits,
-                            splitGroups = splitGroups,
-                            transactions = transactions,
-                            repayments = repayments,
-                            onRecordRepayment = { groupId, memberId, amountPaise, date, linkedTxId, note ->
-                                viewModel.recordRepayment(groupId, memberId, amountPaise, date, linkedTxId, note)
-                            },
-                            onUndoRepayment = { repaymentId ->
-                                viewModel.deleteRepayment(repaymentId)
-                            },
-                            onRemoveSplit = { splitId -> viewModel.removeSplit(splitId) },
-                            onNavigateToTransactions = { currentScreen = Screen.Transactions }
-                        )
+                        if (showGPayRequests) {
+                            com.example.expensetracker.ui.GPayRequestsScreen(
+                                requests = gPayRequests,
+                                splitGroups = splitGroups,
+                                memberMappings = gPayMemberMappings,
+                                transactions = transactions,
+                                onAssignGroup = { requestId, groupId -> viewModel.assignGPayRequestGroup(requestId, groupId) },
+                                onAssignMember = { requestId, memberId, remember -> viewModel.assignGPayRequestMember(requestId, memberId, remember) },
+                                onDismissRequest = { requestId -> viewModel.dismissGPayRequest(requestId) },
+                                onCloseRequest = { requestId, transactionId -> viewModel.closeGPayRequest(requestId, transactionId) },
+                                onConfirmExpense = { requestId -> viewModel.confirmGPayRequestAsExpense(requestId) },
+                                onConfirmRepayment = { requestId ->
+                                    val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                                    viewModel.confirmGPayRepayment(requestId, today)
+                                },
+                                onNavigateBack = { showGPayRequests = false }
+                            )
+                        } else {
+                            SettleUpScreen(
+                                expenseSplits = expenseSplits,
+                                splitGroups = splitGroups,
+                                transactions = transactions,
+                                repayments = repayments,
+                                onRecordRepayment = { groupId, memberId, amountPaise, date, linkedTxId, note ->
+                                    viewModel.recordRepayment(groupId, memberId, amountPaise, date, linkedTxId, note)
+                                },
+                                onUndoRepayment = { repaymentId ->
+                                    viewModel.deleteRepayment(repaymentId)
+                                },
+                                onRemoveSplit = { splitId -> viewModel.removeSplit(splitId) },
+                                onNavigateToTransactions = { currentScreen = Screen.Transactions },
+                                gPayPendingRequestCount = gPayRequests.count { it.processingStatus == com.example.expensetracker.model.GPayProcessingStatus.PENDING },
+                                onOpenGPayRequests = { showGPayRequests = true }
+                            )
+                        }
                     }
                     Screen.Analytics -> {
                         AnalyticsScreen(

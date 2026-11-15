@@ -6,8 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.example.expensetracker.data.local.AppDatabase
 import com.example.expensetracker.data.local.CategoryEntity
 import com.example.expensetracker.data.local.CategoryMappingEntity
+import com.example.expensetracker.data.local.GPayMemberMappingEntity
+import com.example.expensetracker.data.local.GPayRequestEntity
 import com.example.expensetracker.data.local.toDomainModel
 import com.example.expensetracker.data.local.toEntity
+import com.example.expensetracker.model.GPayMatchStatus
+import com.example.expensetracker.model.GPayRequestMatcher
 import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.model.TransactionType
 import java.util.UUID
@@ -50,6 +54,8 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val accountDao = db.accountDao()
     private val balanceObservationDao = db.balanceObservationDao()
     private val sourceAccountMappingDao = db.sourceAccountMappingDao()
+    private val gPayRequestDao = db.gPayRequestDao()
+    private val gPayMemberMappingDao = db.gPayMemberMappingDao()
     private val balancePrivacyPreferences = BalancePrivacyPreferences(application)
 
     val accountsState: StateFlow<List<com.example.expensetracker.data.local.AccountEntity>> = accountDao.getAllAccounts()
@@ -788,6 +794,161 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch(Dispatchers.IO) {
             repaymentDao.deleteRepaymentById(repaymentId)
         }
+    }
+
+    // --- GPay Requests ---
+    val gPayRequestsState: StateFlow<List<GPayRequestEntity>> = gPayRequestDao.getAllRequests()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val gPayMemberMappingsState: StateFlow<List<GPayMemberMappingEntity>> = gPayMemberMappingDao.getAllMappings()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    /** Assigns (or reassigns) the group for a request that couldn't be auto-resolved, then re-attempts member matching. */
+    fun assignGPayRequestGroup(requestId: String, groupId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val request = gPayRequestDao.getByIdSync(requestId) ?: return@launch
+            val group = splitGroupDao.getGroupWithMembersByIdSync(groupId) ?: return@launch
+            val mappings = gPayMemberMappingDao.getAllMappingsSync()
+            val memberMatch = GPayRequestMatcher.matchMember(request.requesterRawName, group, mappings)
+            val (matchedMemberId, matchStatus) = when (memberMatch) {
+                is GPayRequestMatcher.MemberMatchResult.Matched -> memberMatch.member.id to GPayMatchStatus.AUTO_MATCHED
+                GPayRequestMatcher.MemberMatchResult.Ambiguous -> null to GPayMatchStatus.AMBIGUOUS_MEMBER
+                GPayRequestMatcher.MemberMatchResult.NotFound -> null to GPayMatchStatus.NEEDS_MEMBER
+            }
+            gPayRequestDao.upsert(
+                request.copy(
+                    matchedGroupId = groupId,
+                    matchedMemberId = matchedMemberId,
+                    matchStatus = matchStatus,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    /** Assigns (or corrects) the member for a request; optionally remembers the mapping for future requests. */
+    fun assignGPayRequestMember(requestId: String, memberId: String, rememberMapping: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val request = gPayRequestDao.getByIdSync(requestId) ?: return@launch
+            val groupId = request.matchedGroupId ?: return@launch
+            gPayRequestDao.upsert(
+                request.copy(
+                    matchedMemberId = memberId,
+                    matchStatus = GPayMatchStatus.AUTO_MATCHED,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+            if (rememberMapping) {
+                gPayMemberMappingDao.upsert(
+                    GPayMemberMappingEntity(
+                        groupId = groupId,
+                        memberId = memberId,
+                        normalizedRequesterName = request.requesterNormalizedName
+                    )
+                )
+            }
+        }
+    }
+
+    fun deleteGPayMemberMapping(mappingId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            gPayMemberMappingDao.deleteById(mappingId)
+        }
+    }
+
+    fun dismissGPayRequest(requestId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val request = gPayRequestDao.getByIdSync(requestId) ?: return@launch
+            if (request.processingStatus == com.example.expensetracker.model.GPayProcessingStatus.PENDING) {
+                gPayRequestDao.upsert(
+                    request.copy(
+                        processingStatus = com.example.expensetracker.model.GPayProcessingStatus.DISMISSED,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+        }
+    }
+
+    /** Marks a pending request as closed; optionally links the real payment transaction used to settle it. */
+    fun closeGPayRequest(requestId: String, transactionId: String?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val request = gPayRequestDao.getByIdSync(requestId) ?: return@launch
+            if (request.processingStatus != com.example.expensetracker.model.GPayProcessingStatus.PENDING) return@launch
+
+            gPayRequestDao.upsert(
+                request.copy(
+                    processingStatus = com.example.expensetracker.model.GPayProcessingStatus.DISMISSED,
+                    paymentConfirmationTransactionId = transactionId ?: request.paymentConfirmationTransactionId,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    /** Creates the group expense from a resolved (AUTO_MATCHED, still PENDING) GPay request. */
+    fun confirmGPayRequestAsExpense(requestId: String): String? = runBlocking(Dispatchers.IO) {
+        val request = gPayRequestDao.getByIdSync(requestId)
+            ?: return@runBlocking "Request not found."
+        val groupId = request.matchedGroupId
+            ?: return@runBlocking "Assign a group before adding this as an expense."
+        val group = splitGroupDao.getGroupWithMembersByIdSync(groupId)
+            ?: return@runBlocking "Split group not found."
+
+        when (val result = com.example.expensetracker.model.GPayExpenseCreator.createFromRequest(request, group)) {
+            is com.example.expensetracker.model.GPayExpenseCreationResult.Success -> {
+                db.runInTransaction {
+                    transactionDao.insertTransaction(result.transaction)
+                    expenseSplitDao.saveSplitWithShares(result.split, result.shares)
+                    gPayRequestDao.upsert(
+                        request.copy(
+                            processingStatus = com.example.expensetracker.model.GPayProcessingStatus.ADDED_AS_EXPENSE,
+                            linkedTransactionId = result.transaction.id,
+                            linkedSplitId = result.split.id,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+                null
+            }
+            is com.example.expensetracker.model.GPayExpenseCreationResult.Error -> result.message
+        }
+    }
+
+    /** Confirms a detected real GPay payment as the repayment settling the given request. */
+    fun confirmGPayRepayment(requestId: String, paymentDate: String, note: String? = null): com.example.expensetracker.model.RepaymentRecordResult = runBlocking(Dispatchers.IO) {
+        val request = gPayRequestDao.getByIdSync(requestId)
+            ?: return@runBlocking com.example.expensetracker.model.RepaymentRecordResult.Error("Request not found.")
+        val groupId = request.matchedGroupId
+            ?: return@runBlocking com.example.expensetracker.model.RepaymentRecordResult.Error("Request has no resolved group.")
+        val memberId = request.matchedMemberId
+            ?: return@runBlocking com.example.expensetracker.model.RepaymentRecordResult.Error("Request has no resolved member.")
+        val linkedTransactionId = request.paymentConfirmationTransactionId
+            ?: return@runBlocking com.example.expensetracker.model.RepaymentRecordResult.Error("No payment confirmation captured yet for this request.")
+        if (request.repaymentId != null) {
+            return@runBlocking com.example.expensetracker.model.RepaymentRecordResult.Error("A repayment has already been recorded for this request.")
+        }
+
+        val result = recordRepayment(
+            groupId = groupId,
+            memberId = memberId,
+            amountPaise = request.amountPaise,
+            paymentDate = paymentDate,
+            linkedTransactionId = linkedTransactionId,
+            note = note
+        )
+        if (result is com.example.expensetracker.model.RepaymentRecordResult.Success) {
+            gPayRequestDao.upsert(request.copy(repaymentId = result.repayment.id, updatedAt = System.currentTimeMillis()))
+        }
+        result
     }
 
     val backupManager = com.example.expensetracker.data.backup.BackupManager(db)
