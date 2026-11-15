@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,7 +58,6 @@ fun TransactionItem(
     onEditClick: () -> Unit = {},
     onDeleteClick: () -> Unit = {},
     isSelected: Boolean = false,
-    splitCount: Int = 0,
     accountName: String? = null,
     showBorder: Boolean = true,
     modifier: Modifier = Modifier
@@ -141,30 +139,6 @@ fun TransactionItem(
                                 fontWeight = FontWeight.SemiBold,
                                 color = appColors.inkMuted
                             )
-                        }
-                    }
-                    if (splitCount > 0) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(appColors.accentSoft, RoundedCornerShape(100.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Share,
-                                    contentDescription = null,
-                                    tint = appColors.accent,
-                                    modifier = Modifier.size(10.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = if (splitCount == 1) "Split" else "Split ($splitCount)",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = appColors.accent
-                                )
-                            }
                         }
                     }
                 }

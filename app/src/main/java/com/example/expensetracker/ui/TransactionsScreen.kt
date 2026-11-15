@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.expensetracker.data.local.CategoryEntity
+import com.example.expensetracker.data.local.TransactionEditLogEntity
 import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.model.TransactionSource
 import com.example.expensetracker.ui.components.DateRangePickerDialog
@@ -43,9 +44,7 @@ import java.util.Locale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -54,57 +53,21 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
-import com.example.expensetracker.data.local.ExpenseSplitWithShares
-import com.example.expensetracker.data.local.SplitGroupWithMembers
-import com.example.expensetracker.model.SplitCalculationResult
 import com.example.expensetracker.model.TransactionType
-import com.example.expensetracker.ui.components.ConfigureExpenseSplitDialog
-import com.example.expensetracker.ui.components.SelectSplitGroupDialog
-import kotlinx.coroutines.delay
 
 @Composable
 fun TransactionsScreen(
     transactions: List<Transaction>,
+    transactionEditLogs: List<TransactionEditLogEntity> = emptyList(),
     categories: List<CategoryEntity> = emptyList(),
-    splitGroups: List<SplitGroupWithMembers> = emptyList(),
-    expenseSplits: List<ExpenseSplitWithShares> = emptyList(),
     onEditTransaction: (Transaction) -> Unit = {},
-    onDeleteTransaction: (Transaction) -> Unit = {},
-    onRemoveSplit: (transactionId: String) -> String? = { null },
-    onSaveEqualSplit: (transactionId: String, groupId: String) -> SplitCalculationResult = { _, _ -> SplitCalculationResult.Error("") },
-    onSaveCustomSplit: (transactionId: String, groupId: String, customSharesPaise: Map<String, Long>) -> SplitCalculationResult = { _, _, _ -> SplitCalculationResult.Error("") },
-    onUndoSplit: (splitId: String) -> Unit = {},
-    onNavigateToManageGroups: () -> Unit = {}
+    onDeleteTransaction: (Transaction) -> Unit = {}
 ) {
     val appColors = LocalAppColors.current
 
     var viewingDetailsTransaction by remember { mutableStateOf<Transaction?>(null) }
     var menuTransaction by remember { mutableStateOf<Transaction?>(null) }
-    var confirmingSplitRemoval by remember { mutableStateOf<Transaction?>(null) }
-    var splitRemovalError by remember { mutableStateOf<String?>(null) }
-
-    // Split Flow States
-    var selectedSplitTransaction by remember { mutableStateOf<Transaction?>(null) }
-    var selectedGroupForSplit by remember { mutableStateOf<SplitGroupWithMembers?>(null) }
-    var splitCalculationError by remember { mutableStateOf<String?>(null) }
-
-    // 5-Second Undo State: Pair(splitId, message)
-    var undoSnackbarInfo by remember { mutableStateOf<Pair<String, String>?>(null) }
-
-    LaunchedEffect(undoSnackbarInfo) {
-        if (undoSnackbarInfo != null) {
-            delay(5000)
-            undoSnackbarInfo = null
-        }
-    }
-
-    // Map transaction IDs to split count for split badges
-    val splitCountByTxId = remember(expenseSplits) {
-        expenseSplits.groupBy { it.split.transactionId }
-            .mapValues { it.value.size }
-    }
 
     // --- Filter & Search States ---
     var searchQuery by remember { mutableStateOf("") }
@@ -278,7 +241,6 @@ fun TransactionsScreen(
                                     onLongClick = { menuTransaction = transaction },
                                     onEditClick = { onEditTransaction(transaction) },
                                     onDeleteClick = { onDeleteTransaction(transaction) },
-                                    splitCount = splitCountByTxId[transaction.id] ?: 0,
                                     showBorder = false
                                 )
                                 if (index < groupItems.size - 1) {
@@ -315,6 +277,7 @@ fun TransactionsScreen(
     viewingDetailsTransaction?.let { transaction ->
         TransactionDetailsDialog(
             transaction = transaction,
+            editLogs = transactionEditLogs.filter { it.transactionId == transaction.id },
             onDismiss = { viewingDetailsTransaction = null },
             onEditClick = { tx ->
                 viewingDetailsTransaction = null
@@ -329,7 +292,6 @@ fun TransactionsScreen(
 
     // Long-Press Action Menu Dialog
     menuTransaction?.let { tx ->
-        val isEligibleExpense = tx.type == TransactionType.EXPENSE
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { menuTransaction = null },
             title = {
@@ -344,81 +306,6 @@ fun TransactionsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = isEligibleExpense) {
-                                menuTransaction = null
-                                selectedSplitTransaction = tx
-                            },
-                        shape = RoundedCornerShape(10.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isEligibleExpense) appColors.surfaceAlt else appColors.bg
-                        ),
-                        border = BorderStroke(1.dp, appColors.border)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = null,
-                                tint = if (isEligibleExpense) appColors.accent else appColors.inkFaint,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Split Expense",
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isEligibleExpense) appColors.ink else appColors.inkFaint
-                                )
-                                Text(
-                                    text = if (isEligibleExpense) "Split with group members" else "Eligible for expenses only",
-                                    fontSize = 11.5.sp,
-                                    color = appColors.inkFaint
-                                )
-                            }
-                        }
-                    }
-
-                    if ((splitCountByTxId[tx.id] ?: 0) > 0) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    menuTransaction = null
-                                    splitRemovalError = null
-                                    confirmingSplitRemoval = tx
-                                },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = appColors.surfaceAlt),
-                            border = BorderStroke(1.dp, appColors.border)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Share,
-                                    contentDescription = null,
-                                    tint = appColors.accent,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text("Remove Split", fontWeight = FontWeight.Bold, color = appColors.ink)
-                                    Text("Keep the transaction and remove its split allocations", fontSize = 11.5.sp, color = appColors.inkFaint)
-                                }
-                            }
-                        }
-                    }
-
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -491,131 +378,6 @@ fun TransactionsScreen(
                 }
             }
         )
-    }
-
-    confirmingSplitRemoval?.let { tx ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { confirmingSplitRemoval = null },
-            title = { Text("Remove Split?") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("${tx.title} will remain in Transactions, but its split allocations will be removed.")
-                    splitRemovalError?.let { Text(it, color = appColors.negative, fontSize = 12.sp) }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val error = onRemoveSplit(tx.id)
-                    if (error == null) {
-                        confirmingSplitRemoval = null
-                    } else {
-                        splitRemovalError = error
-                    }
-                }) { Text("Remove Split", color = appColors.negative) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmingSplitRemoval = null }) { Text("Cancel") }
-            }
-        )
-    }
-
-    // Split Group Selection & Split Configuration Workflow
-    selectedSplitTransaction?.let { tx ->
-        if (selectedGroupForSplit == null) {
-            SelectSplitGroupDialog(
-                transaction = tx,
-                splitGroups = splitGroups,
-                existingSplits = expenseSplits,
-                onSelectGroup = { group ->
-                    selectedGroupForSplit = group
-                    splitCalculationError = null
-                },
-                onCreateGroupClick = onNavigateToManageGroups,
-                onDismiss = {
-                    selectedSplitTransaction = null
-                    selectedGroupForSplit = null
-                    splitCalculationError = null
-                }
-            )
-        } else {
-            selectedGroupForSplit?.let { group ->
-                ConfigureExpenseSplitDialog(
-                    transaction = tx,
-                    groupWithMembers = group,
-                    errorMessage = splitCalculationError,
-                    onConfirmEqualSplit = {
-                        val res = onSaveEqualSplit(tx.id, group.group.id)
-                        if (res is SplitCalculationResult.Success) {
-                            val splitId = res.split.id
-                            val groupName = group.group.name
-                            selectedSplitTransaction = null
-                            selectedGroupForSplit = null
-                            splitCalculationError = null
-                            undoSnackbarInfo = Pair(splitId, "Expense split with $groupName")
-                        } else if (res is SplitCalculationResult.Error) {
-                            splitCalculationError = res.message
-                        }
-                    },
-                    onConfirmCustomSplit = { customSharesMap ->
-                        val res = onSaveCustomSplit(tx.id, group.group.id, customSharesMap)
-                        if (res is SplitCalculationResult.Success) {
-                            val splitId = res.split.id
-                            val groupName = group.group.name
-                            selectedSplitTransaction = null
-                            selectedGroupForSplit = null
-                            splitCalculationError = null
-                            undoSnackbarInfo = Pair(splitId, "Expense split with $groupName")
-                        } else if (res is SplitCalculationResult.Error) {
-                            splitCalculationError = res.message
-                        }
-                    },
-                    onDismiss = {
-                        selectedSplitTransaction = null
-                        selectedGroupForSplit = null
-                        splitCalculationError = null
-                    }
-                )
-            }
-        }
-    }
-
-    // 5-Second Undo Snackbar
-    undoSnackbarInfo?.let { (splitId, message) ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = appColors.ink),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = message,
-                        color = appColors.surface,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                    TextButton(
-                        onClick = {
-                            onUndoSplit(splitId)
-                            undoSnackbarInfo = null
-                        }
-                    ) {
-                        Text("UNDO", color = appColors.accent, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
     }
 }
 

@@ -8,6 +8,8 @@ import com.example.expensetracker.data.local.CategoryEntity
 import com.example.expensetracker.data.local.CategoryMappingEntity
 import com.example.expensetracker.data.local.GPayMemberMappingEntity
 import com.example.expensetracker.data.local.GPayRequestEntity
+import com.example.expensetracker.data.local.TransactionEditLogEntity
+import com.example.expensetracker.data.local.TransactionEntity
 import com.example.expensetracker.data.local.toDomainModel
 import com.example.expensetracker.data.local.toEntity
 import com.example.expensetracker.model.GPayMatchStatus
@@ -56,6 +58,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val sourceAccountMappingDao = db.sourceAccountMappingDao()
     private val gPayRequestDao = db.gPayRequestDao()
     private val gPayMemberMappingDao = db.gPayMemberMappingDao()
+    private val transactionEditLogDao = db.transactionEditLogDao()
     private val balancePrivacyPreferences = BalancePrivacyPreferences(application)
 
     val accountsState: StateFlow<List<com.example.expensetracker.data.local.AccountEntity>> = accountDao.getAllAccounts()
@@ -179,6 +182,13 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     val transactionsState: StateFlow<List<Transaction>> = transactionDao.getAllTransactions()
         .map { entities -> entities.map { it.toDomainModel() } }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val transactionEditLogsState: StateFlow<List<TransactionEditLogEntity>> = transactionEditLogDao.getAllLogs()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -421,8 +431,71 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun updateTransaction(transaction: Transaction) {
         viewModelScope.launch(Dispatchers.IO) {
-            transactionDao.updateTransaction(transaction.toEntity())
+            updateTransactionWithAudit(
+                updated = transaction.toEntity(),
+                editSource = "MANUAL_EDIT"
+            )
         }
+    }
+
+    private fun updateTransactionWithAudit(updated: TransactionEntity, editSource: String) {
+        val existing = transactionDao.getTransactionByIdSync(updated.id)
+        if (existing == null) {
+            transactionDao.updateTransaction(updated)
+            return
+        }
+
+        val log = buildEditLog(existing, updated, editSource)
+        transactionDao.updateTransaction(updated)
+        transactionEditLogDao.insert(log)
+    }
+
+    private fun buildEditLog(
+        previous: TransactionEntity,
+        updated: TransactionEntity,
+        editSource: String
+    ): TransactionEditLogEntity {
+        val changes = mutableListOf<Pair<String, Pair<String, String>>>()
+
+        fun addChange(field: String, old: Any?, new: Any?) {
+            val oldText = old?.toString() ?: "null"
+            val newText = new?.toString() ?: "null"
+            if (oldText != newText) {
+                changes.add(field to (oldText to newText))
+            }
+        }
+
+        addChange("title", previous.title, updated.title)
+        addChange("amount", previous.amount, updated.amount)
+        addChange("type", previous.type, updated.type)
+        addChange("category", previous.category, updated.category)
+        addChange("date", previous.date, updated.date)
+        addChange("accountId", previous.accountId, updated.accountId)
+        addChange("referenceNumber", previous.referenceNumber, updated.referenceNumber)
+        addChange("balanceIncludedInAccount", previous.balanceIncludedInAccount, updated.balanceIncludedInAccount)
+
+        val hasFieldChanges = changes.isNotEmpty()
+        val changedFields = if (hasFieldChanges) {
+            changes.joinToString(",") { it.first }
+        } else {
+            "none"
+        }
+        val details = if (hasFieldChanges) {
+            changes.joinToString("\n") { (field, values) ->
+                "$field: ${values.first} -> ${values.second}"
+            }
+        } else {
+            "Edit saved with no field-level value changes."
+        }
+
+        return TransactionEditLogEntity(
+            id = UUID.randomUUID().toString(),
+            transactionId = updated.id,
+            editedAt = System.currentTimeMillis(),
+            editSource = editSource,
+            changedFields = changedFields,
+            details = details
+        )
     }
 
     fun previewCategoryLearning(original: Transaction, updated: Transaction): CategoryLearningPreview? {
@@ -459,20 +532,34 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch(Dispatchers.IO) {
             val escapedPattern = Regex.escape(updated.title.trim())
             if (!CategoryMapper.isValidRegex("(?i)$escapedPattern")) {
-                transactionDao.updateTransaction(updated.toEntity())
+                updateTransactionWithAudit(updated.toEntity(), "MANUAL_EDIT")
                 return@launch
             }
             db.runInTransaction {
-                transactionDao.updateTransaction(updated.toEntity())
+                updateTransactionWithAudit(updated.toEntity(), "MANUAL_EDIT")
                 val matchingIds = transactionDao.getAllTransactionsSync()
                     .filter {
                         it.id != updated.id &&
                                 it.type.equals("EXPENSE", ignoreCase = true) &&
                                 it.title.trim().equals(updated.title.trim(), ignoreCase = true)
                     }
-                    .map { it.id }
                 if (matchingIds.isNotEmpty()) {
-                    transactionDao.updateCategoryForTransactionIds(matchingIds, updated.displayCategoryName)
+                    val matchingById = matchingIds.associateBy { it.id }
+                    transactionDao.updateCategoryForTransactionIds(matchingById.keys.toList(), updated.displayCategoryName)
+                    matchingById.values.forEach { tx ->
+                        if (!tx.category.equals(updated.displayCategoryName, ignoreCase = true)) {
+                            transactionEditLogDao.insert(
+                                TransactionEditLogEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    transactionId = tx.id,
+                                    editedAt = System.currentTimeMillis(),
+                                    editSource = "CATEGORY_LEARN",
+                                    changedFields = "category",
+                                    details = "category: ${tx.category} -> ${updated.displayCategoryName}"
+                                )
+                            )
+                        }
+                    }
                 }
                 val pattern = "(?i)$escapedPattern"
                 val existing = categoryMappingDao.getMappingByPatternSync(pattern)

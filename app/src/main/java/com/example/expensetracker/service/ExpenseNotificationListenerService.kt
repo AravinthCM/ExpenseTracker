@@ -5,12 +5,6 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.example.expensetracker.data.local.AppDatabase
-import com.example.expensetracker.data.local.GPayRequestEntity
-import com.example.expensetracker.model.GPayExpenseCreationResult
-import com.example.expensetracker.model.GPayExpenseCreator
-import com.example.expensetracker.model.GPayMatchStatus
-import com.example.expensetracker.model.GPayProcessingStatus
-import com.example.expensetracker.model.GPayRequestProcessor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -149,22 +143,6 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
 
                     val rawText = if (isGmail && bodyText.isNotBlank()) bodyText else "${title ?: ""} ${text ?: ""}".trim()
 
-                    // GPay payment *requests* are handled on a separate path and never treated as a
-                    // normal income/expense transaction — they only affect the ledger once a group
-                    // expense is explicitly created from them (see GPayRequestProcessor).
-                    val gpayRequest = GPayRequestParser.parse(
-                        packageName = packageName,
-                        title = title,
-                        text = text,
-                        bigText = bigText,
-                        textLines = textLines,
-                        postTime = postTime
-                    )
-                    if (gpayRequest != null) {
-                        handleGPayRequestCapture(db, gpayRequest, packageName, notifKey, rawText)
-                        return@launch
-                    }
-
                     // 1. Account Identification
                     val effectiveSuffix = detectionResult.accountNumber ?: parsedTransaction?.accountSuffix ?: NotificationParser.extractAccountSuffix(rawText)
                     val accounts = db.accountDao().getAllAccountsSync()
@@ -214,22 +192,11 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
                                 senderOrPackage = packageName,
                                 referenceNumber = ref,
                                 rawText = rawText,
-                                isResolved = identifiedAccountId != null,
+                                isResolved = false,
                                 isReconciled = false
                             )
                             db.balanceObservationDao().insert(observation)
                             Log.d(TAG, "BALANCE_OBSERVATION_SAVED: id=${observation.id} accountId=$identifiedAccountId balance=₹$observedBalance resolved=${observation.isResolved}")
-
-                            if (identifiedAccountId != null) {
-                                val targetAccount = db.accountDao().getAccountByIdSync(identifiedAccountId)
-                                val updatedAccount = targetAccount?.let {
-                                    com.example.expensetracker.model.BalanceObservationApplier.applyIfNewer(it, observation)
-                                }
-                                if (updatedAccount != null) {
-                                    db.accountDao().updateAccount(updatedAccount)
-                                    Log.d(TAG, "ACCOUNT_BALANCE_BASELINE_UPDATED: accountId=$identifiedAccountId newBalancePaise=${updatedAccount.balanceBaselinePaise}")
-                                }
-                            }
                         } else {
                             Log.d(TAG, "BALANCE_OBSERVATION_SKIPPED: Duplicate observation for ref=$ref / balance=₹$observedBalance")
                         }
@@ -253,9 +220,6 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
 
                         TransactionDeduplicator.processAndSave(db, normalizedTransaction, mappedCategory, applicationContext)
 
-                        if (normalizedTransaction.source == com.example.expensetracker.model.TransactionSource.GPAY.name) {
-                            linkGPayPaymentConfirmation(db, normalizedTransaction)
-                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error processing notification in service scope", e)
@@ -266,100 +230,6 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
         }
     }
 
-    /**
-     * Captures/updates a GPay payment *request* and attempts to resolve it against existing Split
-     * Groups/Members. When confidently matched, it immediately creates the implied group expense
-     * using the existing split engine (payer = requester); otherwise it is left PENDING for the
-     * user to resolve in the GPay Requests review screen.
-     */
-    private fun handleGPayRequestCapture(
-        db: AppDatabase,
-        parsed: GPayRequestParser.ParsedGPayRequest,
-        packageName: String,
-        notificationKey: String?,
-        originalText: String
-    ) {
-        try {
-            val groups = db.splitGroupDao().getAllGroupsWithMembersSync()
-            val mappings = db.gPayMemberMappingDao().getAllMappingsSync()
-            val existingRequests = db.gPayRequestDao().getAllRequestsSync()
-
-            val captureResult = GPayRequestProcessor.captureOrUpdate(
-                parsed = parsed,
-                packageName = packageName,
-                notificationKey = notificationKey,
-                originalText = originalText,
-                existingRequests = existingRequests,
-                groups = groups,
-                memberMappings = mappings
-            )
-
-            var entityToStore = captureResult.entity
-
-            if (captureResult.isNew &&
-                entityToStore.matchStatus == GPayMatchStatus.AUTO_MATCHED &&
-                entityToStore.matchedGroupId != null
-            ) {
-                val group = groups.firstOrNull { it.group.id == entityToStore.matchedGroupId }
-                if (group != null) {
-                    when (val creation = GPayExpenseCreator.createFromRequest(entityToStore, group)) {
-                        is GPayExpenseCreationResult.Success -> {
-                            db.transactionDao().insertTransaction(creation.transaction)
-                            db.expenseSplitDao().saveSplitWithShares(creation.split, creation.shares)
-                            entityToStore = entityToStore.copy(
-                                processingStatus = GPayProcessingStatus.ADDED_AS_EXPENSE,
-                                linkedTransactionId = creation.transaction.id,
-                                linkedSplitId = creation.split.id
-                            )
-                        }
-                        is GPayExpenseCreationResult.Error -> {
-                            Log.w(TAG, "GPAY_REQUEST_AUTO_EXPENSE_FAILED: ${creation.message}")
-                        }
-                    }
-                }
-            }
-
-            db.gPayRequestDao().upsert(entityToStore)
-            Log.d(
-                TAG,
-                "GPAY_REQUEST_CAPTURED: requester=${entityToStore.requesterRawName} amountPaise=${entityToStore.amountPaise} " +
-                    "matchStatus=${entityToStore.matchStatus} processingStatus=${entityToStore.processingStatus} isNew=${captureResult.isNew}"
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Error capturing GPay request", e)
-        }
-    }
-
-    /**
-     * When an ordinary GPay transaction (paid/received) is captured, checks whether it looks like
-     * the real-world settlement of a previously captured request, so the user can later confirm a
-     * repayment for it. This never records a repayment by itself.
-     */
-    private fun linkGPayPaymentConfirmation(db: AppDatabase, normalizedTransaction: NormalizedTransaction) {
-        try {
-            val amountPaise = Math.round(normalizedTransaction.amount * 100.0)
-            val pendingRequests = db.gPayRequestDao().getAllRequestsSync()
-            val match = GPayRequestProcessor.findMatchingRequestForPaymentConfirmation(
-                requests = pendingRequests,
-                counterpartyName = normalizedTransaction.name,
-                amountPaise = amountPaise
-            ) ?: return
-
-            val windowStart = normalizedTransaction.timestamp - 2 * 60 * 1000L
-            val windowEnd = normalizedTransaction.timestamp + 2 * 60 * 1000L
-            val savedTransaction = db.transactionDao().getTransactionsInWindow(windowStart, windowEnd)
-                .filter { it.title == normalizedTransaction.name && it.source == normalizedTransaction.source }
-                .maxByOrNull { it.timestamp }
-                ?: return
-
-            db.gPayRequestDao().upsert(
-                match.copy(paymentConfirmationTransactionId = savedTransaction.id, updatedAt = System.currentTimeMillis())
-            )
-            Log.d(TAG, "GPAY_PAYMENT_CONFIRMATION_LINKED: requestId=${match.id} transactionId=${savedTransaction.id}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error linking GPay payment confirmation", e)
-        }
-    }
 
     private fun extractTextLines(value: Any?): String? {
         if (value == null) return null

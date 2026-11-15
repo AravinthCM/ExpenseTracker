@@ -137,7 +137,7 @@ fun FilterBar(
                 onClick = { typeDropdownExpanded = true },
                 expanded = typeDropdownExpanded,
                 onDismiss = { typeDropdownExpanded = false },
-                options = listOf("All", "Expense", "Income", "Transfer"),
+                options = listOf("All", "Expense", "Income"),
                 onOptionSelected = onTypeSelected
             )
 

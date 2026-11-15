@@ -27,9 +27,10 @@ import java.util.concurrent.Executors
         BalanceObservationEntity::class,
         SourceAccountMappingEntity::class,
         GPayRequestEntity::class,
-        GPayMemberMappingEntity::class
+        GPayMemberMappingEntity::class,
+        TransactionEditLogEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -48,6 +49,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sourceAccountMappingDao(): SourceAccountMappingDao
     abstract fun gPayRequestDao(): GPayRequestDao
     abstract fun gPayMemberMappingDao(): GPayMemberMappingDao
+    abstract fun transactionEditLogDao(): TransactionEditLogDao
 
     companion object {
         @Volatile
@@ -433,6 +435,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `transaction_edit_logs` (
+                        `id` TEXT NOT NULL,
+                        `transactionId` TEXT NOT NULL,
+                        `editedAt` INTEGER NOT NULL,
+                        `editSource` TEXT NOT NULL,
+                        `changedFields` TEXT NOT NULL,
+                        `details` TEXT NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_transaction_edit_logs_transactionId` ON `transaction_edit_logs` (`transactionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_transaction_edit_logs_editedAt` ON `transaction_edit_logs` (`editedAt`)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -440,7 +463,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "expense_tracker_db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)

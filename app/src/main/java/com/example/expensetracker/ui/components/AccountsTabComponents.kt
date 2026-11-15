@@ -1,7 +1,6 @@
 package com.example.expensetracker.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,32 +10,25 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,15 +38,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.expensetracker.data.local.AccountEntity
-import com.example.expensetracker.data.local.BalanceObservationEntity
 import com.example.expensetracker.model.AccountWithBalance
-import com.example.expensetracker.model.ReconciliationResult
 import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.ui.theme.LocalAppColors
 import com.example.expensetracker.ui.util.CurrencyFormatter
@@ -65,58 +55,88 @@ fun AccountsTabContent(
     accountsWithBalances: List<AccountWithBalance>,
     transactions: List<Transaction> = emptyList(),
     unassignedCount: Int,
-    unresolvedObservations: List<BalanceObservationEntity> = emptyList(),
-    allObservations: List<BalanceObservationEntity> = emptyList(),
-    reconciliationResults: Map<String, ReconciliationResult> = emptyMap(),
     onAddAccountClick: () -> Unit,
     onEditAccountClick: (AccountEntity) -> Unit,
     onSetPrimaryAccountClick: (String) -> Unit,
     onToggleArchivedClick: (AccountEntity) -> Unit,
     onDeleteAccountClick: (AccountEntity) -> Unit,
     onAssignUnassignedClick: (String) -> Unit,
-    onAssignSelectedUnassigned: (List<String>, String) -> Unit = { _, _ -> },
-    onAddReconciliationExpense: (AccountEntity, Long, Long) -> Unit = { _, _, _ -> },
-    onReviewReconciliationTransactions: (String) -> Unit = {},
-    onResolveObservation: (observationId: String, accountId: String, rememberMapping: Boolean) -> Unit = { _, _, _ -> },
-    onDeleteObservation: (observationId: String) -> Unit = {}
+    onAssignSelectedUnassigned: (List<String>, String) -> Unit = { _, _ -> }
 ) {
     val appColors = LocalAppColors.current
-    var reviewingObservation by remember { mutableStateOf<BalanceObservationEntity?>(null) }
     var deletingAccount by remember { mutableStateOf<AccountEntity?>(null) }
     var confirmDeletion by remember { mutableStateOf(false) }
     var reviewingUnassigned by remember { mutableStateOf(false) }
     var selectedUnassignedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selectedTargetAccountId by remember { mutableStateOf<String?>(null) }
+    var showArchived by remember { mutableStateOf(false) }
+
+    val activeAccounts = accountsWithBalances.filter { !it.account.isArchived }
+    val archivedAccounts = accountsWithBalances.filter { it.account.isArchived }
+    val totalBalance = activeAccounts.sumOf { it.currentBalanceDouble }
 
     val unassignedTransactions = transactions.filter { transaction ->
         transaction.accountId == null || accountsWithBalances.none { it.account.id == transaction.accountId }
     }
 
+    // ── Review unassigned dialog ──
     if (reviewingUnassigned) {
         AlertDialog(
             onDismissRequest = { reviewingUnassigned = false },
-            title = { Text("Review unassigned transactions", fontWeight = FontWeight.Bold) },
+            title = { Text("Assign transactions", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Select records to assign. Amounts, dates, descriptions, and categories will remain unchanged.")
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "Pick the transactions and the account they belong to. Amounts, dates and categories stay unchanged.",
+                        fontSize = 13.sp,
+                        color = appColors.inkMuted
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("${selectedUnassignedIds.size} of ${unassignedTransactions.size} selected", fontSize = 12.sp, color = appColors.inkFaint)
+                        TextButton(onClick = {
+                            selectedUnassignedIds =
+                                if (selectedUnassignedIds.size == unassignedTransactions.size) emptySet()
+                                else unassignedTransactions.map { it.id }.toSet()
+                        }) {
+                            Text(if (selectedUnassignedIds.size == unassignedTransactions.size) "Clear" else "Select all", fontSize = 12.sp)
+                        }
+                    }
                     unassignedTransactions.forEach { transaction ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
                                 checked = transaction.id in selectedUnassignedIds,
                                 onCheckedChange = { checked ->
-                                    selectedUnassignedIds = if (checked) selectedUnassignedIds + transaction.id else selectedUnassignedIds - transaction.id
+                                    selectedUnassignedIds =
+                                        if (checked) selectedUnassignedIds + transaction.id
+                                        else selectedUnassignedIds - transaction.id
                                 }
                             )
                             Column {
-                                Text(transaction.title, fontWeight = FontWeight.SemiBold)
-                                Text("${transaction.date} • ${transaction.type.name} • ${CurrencyFormatter.format(transaction.amount)}", fontSize = 11.sp)
+                                Text(transaction.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    "${transaction.date} • ${transaction.type.name} • ${CurrencyFormatter.format(transaction.amount)}",
+                                    fontSize = 11.sp,
+                                    color = appColors.inkFaint
+                                )
                             }
                         }
                     }
-                    Text("Assign to:", fontWeight = FontWeight.Bold)
-                    accountsWithBalances.filter { !it.account.isArchived }.forEach { account ->
+                    Text("Assign to", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+                    activeAccounts.forEach { account ->
                         Row(
-                            modifier = Modifier.fillMaxWidth().clickable { selectedTargetAccountId = account.account.id },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedTargetAccountId = account.account.id },
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
@@ -145,6 +165,7 @@ fun AccountsTabContent(
         )
     }
 
+    // ── Delete flow ──
     deletingAccount?.let { account ->
         val currentAccount = accountsWithBalances.firstOrNull { it.account.id == account.id }?.account ?: account
         val requiresReplacementPrimary = currentAccount.isPrimary && !currentAccount.isArchived
@@ -152,21 +173,26 @@ fun AccountsTabContent(
             .map { it.account }
             .filter { !it.isArchived && it.id != currentAccount.id }
         val transactionCount = transactions.count { it.accountId == account.id }
-        val observationCount = allObservations.count { it.accountId == account.id }
+
         AlertDialog(
             onDismissRequest = {
                 deletingAccount = null
                 confirmDeletion = false
             },
-            title = { Text(if (confirmDeletion) "Confirm permanent deletion" else "Delete account?", fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    if (confirmDeletion) "Confirm permanent deletion" else "Remove account?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Account: ${account.name}${account.accountNumber?.let { " (••••$it)" } ?: ""}")
                     if (!confirmDeletion) {
-                        Text("This account has $transactionCount transaction(s) and $observationCount balance observation(s).")
-                        Text("Transactions will be preserved but become unassigned. Balance observations will become unassigned, and source-account mappings will be removed. This deletion cannot be undone.")
+                        Text("This account has $transactionCount transaction(s).")
+                        Text("Archive keeps everything but hides the account. Deleting keeps transactions but leaves them unassigned, and cannot be undone.")
                         if (requiresReplacementPrimary) {
-                            Text("Choose another active account as primary before archiving or deleting this account.", fontWeight = FontWeight.Bold)
+                            Text("Choose another active account as primary first.", fontWeight = FontWeight.Bold)
                             replacementAccounts.forEach { replacement ->
                                 TextButton(onClick = { onSetPrimaryAccountClick(replacement.id) }) {
                                     Text("Make ${replacement.name} primary")
@@ -174,21 +200,24 @@ fun AccountsTabContent(
                             }
                         }
                     } else {
-                        Text("The account will be deleted permanently. Historical transactions will remain without an account assignment.")
+                        Text("The account will be deleted permanently. Historical transactions will remain without an account.")
                     }
                 }
             },
             confirmButton = {
                 if (!confirmDeletion) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = {
-                            onToggleArchivedClick(account)
-                            deletingAccount = null
-                        }, enabled = !requiresReplacementPrimary) { Text("Archive") }
-                            Button(
-                                onClick = { confirmDeletion = true },
-                                enabled = !requiresReplacementPrimary
-                            ) { Text("Continue") }
+                        TextButton(
+                            onClick = {
+                                onToggleArchivedClick(account)
+                                deletingAccount = null
+                            },
+                            enabled = !requiresReplacementPrimary
+                        ) { Text("Archive") }
+                        Button(
+                            onClick = { confirmDeletion = true },
+                            enabled = !requiresReplacementPrimary
+                        ) { Text("Continue") }
                     }
                 } else {
                     Button(
@@ -211,436 +240,186 @@ fun AccountsTabContent(
         )
     }
 
-    if (reviewingObservation != null) {
-        AssignObservationAccountDialog(
-            observation = reviewingObservation!!,
-            accounts = accountsWithBalances.map { it.account },
-            onDismiss = { reviewingObservation = null },
-            onConfirm = { accountId, rememberMapping ->
-                onResolveObservation(reviewingObservation!!.id, accountId, rememberMapping)
-                reviewingObservation = null
-            },
-            onDelete = {
-                onDeleteObservation(reviewingObservation!!.id)
-                reviewingObservation = null
-            }
+    if (accountsWithBalances.isEmpty() && unassignedCount == 0) {
+        ManageEmptyState(
+            title = "No accounts yet",
+            message = "Add your bank accounts and cash so every transaction and balance has a home.",
+            actionLabel = "Add account",
+            onAction = onAddAccountClick
         )
+        return
     }
-
-    val primaryAccount = accountsWithBalances.find { it.account.isPrimary && !it.account.isArchived }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Unresolved Observations Review Banner
-        if (unresolvedObservations.isNotEmpty()) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = appColors.negativeSoft)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = appColors.negative, modifier = Modifier.size(16.dp))
-                            Text(
-                                text = "Unresolved Balance Observations (${unresolvedObservations.size})",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.5.sp,
-                                color = appColors.negative
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Bank balance alerts whose account could not be safely identified. Review and assign them to an account.",
-                            fontSize = 12.sp,
-                            color = appColors.inkMuted
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        unresolvedObservations.forEach { obs ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(appColors.surface)
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "₹${CurrencyFormatter.format(obs.balancePaise / 100.0)} • ${obs.source}",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = appColors.ink
-                                    )
-                                    if (!obs.accountSuffix.isNullOrBlank()) {
-                                        Text(
-                                            text = "Account suffix: ${obs.accountSuffix}",
-                                            fontSize = 11.5.sp,
-                                            color = appColors.accent
-                                        )
-                                    }
-                                }
-                                Button(
-                                    onClick = { reviewingObservation = obs },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = appColors.accent,
-                                        contentColor = appColors.accentInk
-                                    ),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                                ) {
-                                    Text("Assign", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
-                    }
-                }
-            }
-        }
-
-        // Banner for Unassigned Transactions if any
+        // Needs-attention banner
         if (unassignedCount > 0) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = appColors.accentSoft)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp)
+            item(key = "unassigned") {
+                Surface(shape = RoundedCornerShape(14.dp), color = appColors.accentSoft, modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "$unassignedCount transaction(s) have no account",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = appColors.accent
+                            )
+                            Text("Captured before you added accounts.", fontSize = 12.sp, color = appColors.inkMuted)
+                        }
+                        if (activeAccounts.isNotEmpty()) {
+                            TextButton(onClick = { reviewingUnassigned = true }) {
+                                Text("Assign", fontWeight = FontWeight.Bold, color = appColors.accent)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Total across active accounts
+        if (activeAccounts.isNotEmpty()) {
+            item(key = "total") {
+                Surface(shape = RoundedCornerShape(16.dp), color = appColors.surface, modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(appColors.accentSoft.copy(alpha = 0.5f))
+                            .padding(16.dp)
+                    ) {
+                        Text("Total balance", fontSize = 12.sp, color = appColors.inkMuted)
                         Text(
-                            text = "$unassignedCount unassigned transaction(s)",
+                            CurrencyFormatter.format(totalBalance),
+                            fontSize = 26.sp,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.5.sp,
-                            color = appColors.accent
+                            color = if (totalBalance >= 0) appColors.ink else appColors.negative
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Historical transactions captured before creating accounts are currently unassigned.",
+                            "Across ${activeAccounts.size} active account${if (activeAccounts.size == 1) "" else "s"}",
                             fontSize = 12.sp,
-                            color = appColors.inkMuted
-                        )
-                        if (primaryAccount != null) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = { reviewingUnassigned = true },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = appColors.accent,
-                                    contentColor = appColors.accentInk
-                                ),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Review and assign", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Add Account Button
-        item {
-            Button(
-                onClick = onAddAccountClick,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = appColors.accent,
-                    contentColor = appColors.accentInk
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-            ) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Add Bank / Cash Account", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
-            }
-        }
-
-        if (accountsWithBalances.isEmpty()) {
-            item {
-                Text(
-                    text = "No bank or cash accounts configured yet. Tap above to add one.",
-                    fontSize = 13.sp,
-                    color = appColors.inkFaint,
-                    modifier = Modifier.padding(vertical = 16.dp)
-                )
-            }
-        } else {
-            items(
-                items = accountsWithBalances,
-                key = { it.account.id }
-            ) { item ->
-                AccountCardItem(
-                    accountWithBalance = item,
-                    reconciliationResult = reconciliationResults[item.account.id],
-                    onEditClick = { onEditAccountClick(item.account) },
-                    onSetPrimaryClick = { onSetPrimaryAccountClick(item.account.id) },
-                    onToggleArchivedClick = { onToggleArchivedClick(item.account) },
-                    onDeleteClick = { deletingAccount = item.account },
-                    onAssignUnassignedClick = { onAssignUnassignedClick(item.account.id) },
-                    onAddReconciliationExpense = { amountPaise, timestamp ->
-                        onAddReconciliationExpense(item.account, amountPaise, timestamp)
-                    },
-                    onReviewReconciliationTransactions = { onReviewReconciliationTransactions(item.account.id) }
-                )
-            }
-        }
-    }
-}
-
-private fun formatObservationTimestamp(timestamp: Long): String {
-    val formatter = java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault())
-    return formatter.format(java.util.Date(timestamp))
-}
-
-@Composable
-fun AccountCardItem(
-    accountWithBalance: AccountWithBalance,
-    reconciliationResult: ReconciliationResult? = null,
-    onEditClick: () -> Unit,
-    onSetPrimaryClick: () -> Unit,
-    onToggleArchivedClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-    onAssignUnassignedClick: () -> Unit,
-    onAddReconciliationExpense: (Long, Long) -> Unit = { _, _ -> },
-    onReviewReconciliationTransactions: () -> Unit = {}
-) {
-    val appColors = LocalAppColors.current
-    val account = accountWithBalance.account
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = appColors.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, appColors.border)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                text = account.name,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
-                                ),
-                                color = if (account.isArchived) appColors.inkFaint else appColors.ink
-                            )
-                            if (!account.accountNumber.isNullOrBlank()) {
-                                Text(
-                                    text = "••••${account.accountNumber}",
-                                    fontSize = 12.sp,
-                                    color = appColors.inkMuted,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-
-                    if (account.isPrimary) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(appColors.positiveSoft)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "PRIMARY",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = appColors.positive
-                            )
-                        }
-                    }
-
-                    if (account.isArchived) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(appColors.surfaceAlt)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "ARCHIVED",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = appColors.inkFaint
-                            )
-                        }
-                    }
-                }
-
-                Row {
-                    IconButton(onClick = onEditClick, modifier = Modifier.size(32.dp)) {
-                        Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit", tint = appColors.inkMuted, modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = onDeleteClick, modifier = Modifier.size(32.dp)) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = appColors.negative, modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Balance Display
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Column {
-                    Text(text = "Current balance", fontSize = 11.sp, color = appColors.inkFaint)
-                    Text(
-                        text = CurrencyFormatter.format(accountWithBalance.currentBalanceDouble),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (accountWithBalance.currentBalancePaise >= 0) appColors.positive else appColors.negative
-                    )
-                    if (account.balanceBaselineTimestamp != null) {
-                        Text(
-                            text = "Last synced: ${formatObservationTimestamp(account.balanceBaselineTimestamp)}",
-                            fontSize = 10.5.sp,
                             color = appColors.inkFaint
                         )
                     }
                 }
-
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(text = "Legacy opening balance", fontSize = 11.sp, color = appColors.inkFaint)
-                    Text(
-                        text = CurrencyFormatter.format(account.openingBalancePaise / 100.0),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = appColors.inkMuted
-                    )
-                }
             }
+        }
 
-            // Reconciliation Status Badge
-            if (reconciliationResult?.latestObservation != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                if (reconciliationResult.isReconciled) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(appColors.positiveSoft)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = appColors.positive, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Reconciled with bank (₹${CurrencyFormatter.format(reconciliationResult.observedBalanceDouble ?: 0.0)})",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = appColors.positive
-                        )
-                    }
-                } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(appColors.negativeSoft)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = appColors.negative, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = reconciliationResult.statusMessage,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = appColors.negative
-                        )
-                    }
-                    // Never show a bare discrepancy warning without the actual numbers behind it.
-                    Column(modifier = Modifier.padding(top = 6.dp)) {
-                        Text(
-                            text = "Bank balance: ₹${CurrencyFormatter.format(reconciliationResult.observedBalanceDouble ?: 0.0)} (as of ${formatObservationTimestamp(reconciliationResult.latestObservation.timestamp)})",
-                            fontSize = 11.sp,
-                            color = appColors.ink
-                        )
-                        Text(
-                            text = "Recorded balance: ₹${CurrencyFormatter.format(reconciliationResult.expectedBalanceDouble)}",
-                            fontSize = 11.sp,
-                            color = appColors.ink
-                        )
-                        Text(
-                            text = "Difference: ₹${CurrencyFormatter.format(kotlin.math.abs(reconciliationResult.discrepancyDouble ?: 0.0))} unexplained",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = appColors.negative
-                        )
-                    }
-                }
-                if (reconciliationResult.discrepancyPaise != null && reconciliationResult.discrepancyPaise != 0L) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (reconciliationResult.discrepancyPaise < 0L) {
-                            TextButton(onClick = {
-                                onAddReconciliationExpense(
-                                    kotlin.math.abs(reconciliationResult.discrepancyPaise),
-                                    reconciliationResult.latestObservation.timestamp
-                                )
-                            }) { Text("+ Add missing expense") }
-                        } else {
-                            TextButton(onClick = onReviewReconciliationTransactions) { Text("Review recorded transactions") }
-                        }
-                    }
-                }
-            }
+        items(items = activeAccounts, key = { "a_" + it.account.id }) { item ->
+            AccountCardItem(
+                accountWithBalance = item,
+                onEditClick = { onEditAccountClick(item.account) },
+                onSetPrimaryClick = { onSetPrimaryAccountClick(item.account.id) },
+                onToggleArchivedClick = { onToggleArchivedClick(item.account) },
+                onDeleteClick = { deletingAccount = item.account },
+                onAssignUnassignedClick = { onAssignUnassignedClick(item.account.id) }
+            )
+        }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (!account.isPrimary && !account.isArchived) {
-                    TextButton(
-                        onClick = onSetPrimaryClick,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.Star, contentDescription = null, modifier = Modifier.size(14.dp), tint = appColors.accent)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Make primary", fontSize = 11.5.sp, color = appColors.accent, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                TextButton(
-                    onClick = onToggleArchivedClick,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                ) {
+        if (archivedAccounts.isNotEmpty()) {
+            item(key = "archived_toggle") {
+                TextButton(onClick = { showArchived = !showArchived }) {
                     Text(
-                        text = if (account.isArchived) "Unarchive" else "Archive",
-                        fontSize = 11.5.sp,
+                        if (showArchived) "Hide archived" else "Archived (${archivedAccounts.size})",
                         color = appColors.inkMuted,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
             }
+            if (showArchived) {
+                items(items = archivedAccounts, key = { "z_" + it.account.id }) { item ->
+                    AccountCardItem(
+                        accountWithBalance = item,
+                        onEditClick = { onEditAccountClick(item.account) },
+                        onSetPrimaryClick = { onSetPrimaryAccountClick(item.account.id) },
+                        onToggleArchivedClick = { onToggleArchivedClick(item.account) },
+                        onDeleteClick = { deletingAccount = item.account },
+                        onAssignUnassignedClick = { onAssignUnassignedClick(item.account.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AccountCardItem(
+    accountWithBalance: AccountWithBalance,
+    onEditClick: () -> Unit,
+    onSetPrimaryClick: () -> Unit,
+    onToggleArchivedClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    onAssignUnassignedClick: () -> Unit // kept for source compatibility
+) {
+    val appColors = LocalAppColors.current
+    val account = accountWithBalance.account
+
+    val actions = buildList {
+        add(ManageMenuAction("Edit") { onEditClick() })
+        if (!account.isPrimary && !account.isArchived) {
+            add(ManageMenuAction("Make primary") { onSetPrimaryClick() })
+        }
+        add(ManageMenuAction(if (account.isArchived) "Unarchive" else "Archive") { onToggleArchivedClick() })
+        add(ManageMenuAction("Delete", destructive = true) { onDeleteClick() })
+    }
+
+    ManageSurface(onClick = onEditClick) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        if (account.isArchived) appColors.surfaceAlt else appColors.accentSoft,
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    account.name.take(1).uppercase(),
+                    fontWeight = FontWeight.Bold,
+                    color = if (account.isArchived) appColors.inkFaint else appColors.accent
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        account.name,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (account.isArchived) appColors.inkFaint else appColors.ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (account.isPrimary) ManagePill("PRIMARY", appColors.positiveSoft, appColors.positive)
+                    if (account.isArchived) ManagePill("ARCHIVED", appColors.surfaceAlt, appColors.inkFaint)
+                }
+                if (!account.accountNumber.isNullOrBlank()) {
+                    Text("••••${account.accountNumber}", fontSize = 12.sp, color = appColors.inkFaint)
+                }
+            }
+            Text(
+                CurrencyFormatter.format(accountWithBalance.currentBalanceDouble),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = when {
+                    account.isArchived -> appColors.inkFaint
+                    accountWithBalance.currentBalancePaise >= 0 -> appColors.ink
+                    else -> appColors.negative
+                },
+                maxLines = 1
+            )
+            ManageOverflowMenu(actions = actions)
         }
     }
 }
@@ -716,7 +495,7 @@ fun AddOrEditAccountDialog(
                 )
                 Text(
                     text = "This sets a manual balance checkpoint as of now. It does not edit or delete any past transactions. " +
-                        "A newer captured bank balance will still take precedence automatically.",
+                        "You can update this manually any time.",
                     fontSize = 11.sp,
                     color = appColors.inkFaint
                 )
@@ -727,10 +506,7 @@ fun AddOrEditAccountDialog(
                         .fillMaxWidth()
                         .clickable { isPrimary = !isPrimary }
                 ) {
-                    Checkbox(
-                        checked = isPrimary,
-                        onCheckedChange = { isPrimary = it }
-                    )
+                    Checkbox(checked = isPrimary, onCheckedChange = { isPrimary = it })
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Set as primary account for new transactions",
@@ -772,112 +548,6 @@ fun AddOrEditAccountDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel", color = appColors.inkMuted)
-            }
-        },
-        containerColor = appColors.surface,
-        shape = RoundedCornerShape(18.dp)
-    )
-}
-
-@Composable
-fun AssignObservationAccountDialog(
-    observation: BalanceObservationEntity,
-    accounts: List<AccountEntity>,
-    onDismiss: () -> Unit,
-    onConfirm: (accountId: String, rememberMapping: Boolean) -> Unit,
-    onDelete: () -> Unit
-) {
-    val appColors = LocalAppColors.current
-    val activeAccounts = accounts.filter { !it.isArchived }
-    var selectedAccountId by remember { mutableStateOf(activeAccounts.firstOrNull()?.id ?: "") }
-    var rememberMapping by remember { mutableStateOf(true) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(text = "Assign Account to Observation", fontWeight = FontWeight.Bold, color = appColors.ink)
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                        text = "Bank balance of ₹${CurrencyFormatter.format(observation.balancePaise / 100.0)} was observed, but the account could not be automatically identified.",
-                    fontSize = 12.5.sp,
-                    color = appColors.inkMuted
-                )
-                if (!observation.accountSuffix.isNullOrBlank()) {
-                    Text(
-                        text = "Extracted Suffix: ${observation.accountSuffix}",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = appColors.accent
-                    )
-                }
-                Text(
-                    text = "Source: ${observation.source}${observation.senderOrPackage?.let { " ($it)" } ?: ""}",
-                    fontSize = 11.5.sp,
-                    color = appColors.inkFaint
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "Select Account:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = appColors.ink)
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    activeAccounts.forEach { acc ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedAccountId = acc.id }
-                                .padding(vertical = 4.dp)
-                        ) {
-                            RadioButton(
-                                selected = selectedAccountId == acc.id,
-                                onClick = { selectedAccountId = acc.id }
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = acc.name + (acc.accountNumber?.let { " (••••$it)" } ?: ""), fontSize = 13.sp, color = appColors.ink)
-                        }
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { rememberMapping = !rememberMapping }
-                        .padding(top = 6.dp)
-                ) {
-                    Checkbox(checked = rememberMapping, onCheckedChange = { rememberMapping = it })
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "Remember mapping for this source pattern", fontSize = 11.5.sp, color = appColors.ink)
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (selectedAccountId.isNotBlank()) {
-                        onConfirm(selectedAccountId, rememberMapping)
-                        onDismiss()
-                    }
-                },
-                enabled = selectedAccountId.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = appColors.accent, contentColor = appColors.accentInk)
-            ) {
-                Text("Assign & Resolve", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = {
-                    onDelete()
-                    onDismiss()
-                }) {
-                    Text("Dismiss", color = appColors.negative)
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel", color = appColors.inkMuted)
-                }
             }
         },
         containerColor = appColors.surface,

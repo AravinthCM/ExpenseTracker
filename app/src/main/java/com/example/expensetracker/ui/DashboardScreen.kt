@@ -34,6 +34,7 @@ import com.example.expensetracker.model.AccountBalanceCalculator
 import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.model.TransactionCategory
 import com.example.expensetracker.model.TransactionType
+import com.example.expensetracker.ui.components.AccountBalanceSnapshot
 import com.example.expensetracker.ui.components.BalanceCard
 import com.example.expensetracker.ui.components.CategoryDonutChart
 import com.example.expensetracker.ui.components.CategorySpendingItem
@@ -42,6 +43,7 @@ import com.example.expensetracker.ui.components.TransactionItem
 import com.example.expensetracker.ui.components.getCategoryIconAndColor
 import com.example.expensetracker.ui.theme.LocalAppColors
 import com.example.expensetracker.ui.theme.RadiusMd
+import java.util.Calendar
 
 @Composable
 fun DashboardScreen(
@@ -67,6 +69,7 @@ fun DashboardScreen(
     val validSelectedAccountId = remember(selectedAccountId, activeAccounts) {
         selectedAccountId?.takeIf { id -> activeAccounts.any { it.id == id } }
     }
+    val transactionEntities = remember(transactions) { transactions.map { it.toEntity() } }
 
     // Filter transactions according to selected account
     val filteredTransactions = remember(transactions, validSelectedAccountId) {
@@ -91,7 +94,7 @@ fun DashboardScreen(
         if (validSelectedAccountId == null) {
             val activeAccountsPaise = AccountBalanceCalculator.calculateTotalActiveBalancePaise(
                 activeAccounts,
-                transactions.map { it.toEntity() }
+                transactionEntities
             )
             activeAccountsPaise / 100.0
         } else {
@@ -99,7 +102,7 @@ fun DashboardScreen(
             if (selectedAcc != null) {
                 val balancePaise = AccountBalanceCalculator.calculateAccountBalancePaise(
                     selectedAcc,
-                    transactions.map { it.toEntity() }
+                    transactionEntities
                 )
                 balancePaise / 100.0
             } else {
@@ -108,8 +111,37 @@ fun DashboardScreen(
         }
     }
 
-    // Donut Category Breakdown (Top spending categories in filtered set)
-    val expenseTransactions = filteredTransactions.filter { it.type == TransactionType.EXPENSE }
+    // Donut Category Breakdown (Top spending categories in current month, independent of account slider)
+    val now = remember { Calendar.getInstance() }
+    val currentYear = now.get(Calendar.YEAR)
+    val currentMonth = now.get(Calendar.MONTH)
+
+    val accountSnapshots = remember(activeAccounts, transactions, transactionEntities, currentYear, currentMonth) {
+        activeAccounts.map { account ->
+            val accountBalancePaise = AccountBalanceCalculator.calculateAccountBalancePaise(account, transactionEntities)
+            val accountMonthTransactions = transactions.filter { tx ->
+                tx.accountId == account.id && tx.timestamp > 0L && run {
+                    val txCal = Calendar.getInstance().apply { timeInMillis = tx.timestamp }
+                    txCal.get(Calendar.YEAR) == currentYear && txCal.get(Calendar.MONTH) == currentMonth
+                }
+            }
+            AccountBalanceSnapshot(
+                accountId = account.id,
+                accountName = account.name,
+                isPrimary = account.isPrimary,
+                totalBalance = accountBalancePaise / 100.0,
+                currentMonthIncome = accountMonthTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount },
+                currentMonthExpense = accountMonthTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+            )
+        }
+    }
+
+    val expenseTransactions = transactions.filter { tx ->
+        tx.type == TransactionType.EXPENSE && tx.timestamp > 0L && run {
+            val txCal = Calendar.getInstance().apply { timeInMillis = tx.timestamp }
+            txCal.get(Calendar.YEAR) == currentYear && txCal.get(Calendar.MONTH) == currentMonth
+        }
+    }
     val totalExpenseSum = expenseTransactions.sumOf { it.amount }
 
     val categorySpendingMap = expenseTransactions
@@ -142,6 +174,7 @@ fun DashboardScreen(
         item {
             BalanceCard(
                 accounts = accounts,
+                accountSnapshots = accountSnapshots,
                 selectedAccountId = validSelectedAccountId,
                 isBalanceVisible = isBalanceVisible,
                 totalBalance = totalBalance,
@@ -214,7 +247,7 @@ fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (validSelectedAccountId == null) "Recent transactions" else "Recent account transactions",
+                    text = "Recent transactions",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp
@@ -238,11 +271,11 @@ fun DashboardScreen(
         }
 
         // 4. Recent Transactions List (Top 5)
-        val recentList = filteredTransactions.sortedByDescending { it.timestamp }.take(5)
+        val recentList = transactions.sortedByDescending { it.timestamp }.take(5)
         if (recentList.isEmpty()) {
             item {
                 Text(
-                    text = "No recent transactions for this selection.",
+                    text = "No recent transactions yet.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = appColors.inkFaint,
                     modifier = Modifier.padding(vertical = 12.dp, horizontal = 2.dp)

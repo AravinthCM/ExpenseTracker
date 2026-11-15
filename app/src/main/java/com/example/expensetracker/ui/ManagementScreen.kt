@@ -1,81 +1,117 @@
-package com.example.expensetracker.ui
 
-import androidx.compose.foundation.BorderStroke
+package com.example.expensetracker.ui
+ 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import com.example.expensetracker.ui.theme.BorderSubtle
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.foundation.background
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Scaffold
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.sp
-import com.example.expensetracker.ui.theme.AppSpacing
-import com.example.expensetracker.ui.theme.LocalAppColors
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.expensetracker.data.local.CategoryEntity
 import com.example.expensetracker.data.local.CategoryMappingEntity
 import com.example.expensetracker.service.CategoryMapper
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+import com.example.expensetracker.ui.components.ManageEmptyState
+import com.example.expensetracker.ui.components.ManageMenuAction
+import com.example.expensetracker.ui.components.ManageOverflowMenu
+import com.example.expensetracker.ui.components.ManagePill
+import com.example.expensetracker.ui.components.ManageSurface
+import com.example.expensetracker.ui.components.getCategoryIconAndColor
+import com.example.expensetracker.ui.theme.LocalAppColors
+import com.example.expensetracker.ui.util.CurrencyFormatter
+ 
+// ───────────────────────── Navigation model ─────────────────────────
+ 
+private enum class ManagePage(val title: String) {
+    ACCOUNTS("Accounts"),
+    CATEGORIES("Categories"),
+    RULES("Category rules"),
+    TEMPLATES("Payment templates"),
+    BACKUP("Backup & restore")
+}
+ 
+/** Maps the old tab indexes (used by callers / deep links) to pages. -1 (or anything else) = hub. */
+private fun pageForIndex(index: Int): ManagePage? = when (index) {
+    0 -> ManagePage.CATEGORIES
+    1 -> ManagePage.RULES
+    2 -> ManagePage.TEMPLATES
+    3 -> ManagePage.ACCOUNTS
+    4 -> ManagePage.BACKUP
+    else -> null
+}
+ 
+private data class HubItem(
+    val page: ManagePage,
+    val icon: ImageVector,
+    val title: String,
+    val subtitle: String
+)
+ 
+private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
+ 
+// ───────────────────────── Screen ─────────────────────────
+ 
 @Composable
 fun ManagementScreen(
     categories: List<CategoryEntity>,
     mappings: List<CategoryMappingEntity>,
     paymentTemplates: List<com.example.expensetracker.data.local.PaymentTemplateEntity> = emptyList(),
-    splitGroups: List<com.example.expensetracker.data.local.SplitGroupWithMembers> = emptyList(),
     accountsWithBalances: List<com.example.expensetracker.model.AccountWithBalance> = emptyList(),
     transactions: List<com.example.expensetracker.model.Transaction> = emptyList(),
     unassignedTransactionCount: Int = 0,
-    allObservations: List<com.example.expensetracker.data.local.BalanceObservationEntity> = emptyList(),
-    initialSelectedTab: Int = 0,
+    initialSelectedTab: Int = -1, // -1 = show the Manage hub. 0..4 open that section directly.
     initialSampleForTemplate: String? = null,
     onAddCategory: (String) -> Unit,
     onUpdateCategory: (CategoryEntity, String) -> Unit,
@@ -87,20 +123,12 @@ fun ManagementScreen(
     onUpdatePaymentTemplate: (com.example.expensetracker.data.local.PaymentTemplateEntity) -> Unit = {},
     onTogglePaymentTemplateEnabled: (com.example.expensetracker.data.local.PaymentTemplateEntity) -> Unit = {},
     onDeletePaymentTemplate: (com.example.expensetracker.data.local.PaymentTemplateEntity) -> Unit = {},
-    onSaveSplitGroup: (groupId: String?, name: String, members: List<com.example.expensetracker.model.DraftMember>) -> com.example.expensetracker.model.ValidationResult = { _, _, _ -> com.example.expensetracker.model.ValidationResult(false) },
-    onDeleteSplitGroup: (com.example.expensetracker.data.local.SplitGroupEntity) -> Unit = {},
     onSaveAccount: (id: String?, name: String, currentBalancePaise: Long, isPrimary: Boolean, accountNumber: String?) -> String? = { _, _, _, _, _ -> null },
     onSetPrimaryAccount: (accountId: String) -> Unit = {},
     onSetAccountArchived: (accountId: String, isArchived: Boolean) -> Unit = { _, _ -> },
     onDeleteAccount: (com.example.expensetracker.data.local.AccountEntity) -> Unit = {},
     onAssignUnassignedTransactions: (accountId: String) -> Unit = {},
     onAssignSelectedUnassigned: (transactionIds: List<String>, accountId: String) -> Unit = { _, _ -> },
-    onAddReconciliationExpense: (com.example.expensetracker.data.local.AccountEntity, Long, Long) -> Unit = { _, _, _ -> },
-    onReviewReconciliationTransactions: (String) -> Unit = {},
-    unresolvedObservations: List<com.example.expensetracker.data.local.BalanceObservationEntity> = emptyList(),
-    reconciliationResults: Map<String, com.example.expensetracker.model.ReconciliationResult> = emptyMap(),
-    onResolveObservation: (observationId: String, accountId: String, rememberMapping: Boolean) -> Unit = { _, _, _ -> },
-    onDeleteObservation: (observationId: String) -> Unit = {},
     totalTransactionCount: Int = 0,
     backupExportState: com.example.expensetracker.data.backup.BackupExportState = com.example.expensetracker.data.backup.BackupExportState.Idle,
     backupImportState: com.example.expensetracker.data.backup.BackupImportState = com.example.expensetracker.data.backup.BackupImportState.Idle,
@@ -112,29 +140,152 @@ fun ManagementScreen(
     onDismissImportState: () -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
-    var selectedTabIndex by remember(initialSelectedTab) { mutableIntStateOf(initialSelectedTab) }
-
-    // Dialog States
+    var page by rememberSaveable(initialSelectedTab, initialSampleForTemplate) {
+        mutableStateOf<ManagePage?>(
+            if (!initialSampleForTemplate.isNullOrBlank()) ManagePage.TEMPLATES
+            else pageForIndex(initialSelectedTab)
+        )
+    }
+ 
+    // System back from a section returns to the hub; from the hub it behaves as before.
+    BackHandler(enabled = page != null) { page = null }
+ 
+    // Dialog states
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
     var deletingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
-
+ 
     var showAddMappingDialog by remember { mutableStateOf(false) }
     var editingMapping by remember { mutableStateOf<CategoryMappingEntity?>(null) }
-
+    var deletingMapping by remember { mutableStateOf<CategoryMappingEntity?>(null) }
+ 
     var showAddTemplateDialog by remember(initialSampleForTemplate) { mutableStateOf(!initialSampleForTemplate.isNullOrBlank()) }
     var editingTemplate by remember { mutableStateOf<com.example.expensetracker.data.local.PaymentTemplateEntity?>(null) }
     var testingTemplate by remember { mutableStateOf<com.example.expensetracker.data.local.PaymentTemplateEntity?>(null) }
-
-    // Account Dialog States
+ 
     var showAddAccountDialog by remember { mutableStateOf(false) }
     var editingAccount by remember { mutableStateOf<com.example.expensetracker.data.local.AccountEntity?>(null) }
-
-    // Split Group States
-    var isCreatingGroup by remember { mutableStateOf(false) }
-    var editingGroup by remember { mutableStateOf<com.example.expensetracker.data.local.SplitGroupWithMembers?>(null) }
-    var deletingGroup by remember { mutableStateOf<com.example.expensetracker.data.local.SplitGroupEntity?>(null) }
-
+ 
+    // ── Derived summaries for the hub ──
+    val activeAccounts = remember(accountsWithBalances) { accountsWithBalances.filter { !it.account.isArchived } }
+    val totalBalance = remember(activeAccounts) { activeAccounts.sumOf { it.currentBalanceDouble } }
+    val categoryUsage = remember(transactions) {
+        transactions.groupingBy { it.displayCategoryName.lowercase() }.eachCount()
+    }
+ 
+    val hubGroups = listOf(
+        "MONEY" to listOf(
+            HubItem(
+                ManagePage.ACCOUNTS, Icons.Default.AccountBox, "Accounts",
+                if (accountsWithBalances.isEmpty()) "Add your bank or cash accounts"
+                else "${plural(activeAccounts.size, "account")} · ${CurrencyFormatter.format(totalBalance)}"
+            ),
+            HubItem(
+                ManagePage.CATEGORIES, Icons.AutoMirrored.Filled.List, "Categories",
+                plural(categories.size, "category", "categories")
+            )
+        ),
+        "AUTO-TRACKING" to listOf(
+            HubItem(
+                ManagePage.TEMPLATES, Icons.Default.Notifications, "Payment templates",
+                if (paymentTemplates.isEmpty()) "Teach the app to read your bank alerts"
+                else "${paymentTemplates.count { it.enabled }} of ${paymentTemplates.size} active"
+            ),
+            HubItem(
+                ManagePage.RULES, Icons.Default.Build, "Category rules",
+                if (mappings.isEmpty()) "Auto-assign categories by merchant text"
+                else plural(mappings.size, "rule")
+            )
+        ),
+        "DATA" to listOf(
+            HubItem(
+                ManagePage.BACKUP, Icons.Default.Refresh, "Backup & restore",
+                "${plural(totalTransactionCount, "transaction")} safe to export"
+            )
+        )
+    )
+ 
+    Box(modifier = Modifier.fillMaxSize()) {
+        Crossfade(targetState = page, label = "managePage") { current ->
+            if (current == null) {
+                ManageHub(
+                    unassignedCount = unassignedTransactionCount,
+                    groups = hubGroups,
+                    onOpen = { page = it }
+                )
+            } else {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    val (subtitle, addAction) = when (current) {
+                        ManagePage.ACCOUNTS -> plural(accountsWithBalances.size, "account") to { showAddAccountDialog = true }
+                        ManagePage.CATEGORIES -> plural(categories.size, "category", "categories") to { showAddCategoryDialog = true }
+                        ManagePage.RULES -> plural(mappings.size, "rule") to { showAddMappingDialog = true }
+                        ManagePage.TEMPLATES -> "${paymentTemplates.count { it.enabled }} of ${paymentTemplates.size} active" to { showAddTemplateDialog = true }
+                        ManagePage.BACKUP -> null to null
+                    }
+ 
+                    PageHeader(
+                        title = current.title,
+                        subtitle = subtitle,
+                        onBack = { page = null },
+                        onAdd = addAction
+                    )
+ 
+                    when (current) {
+                        ManagePage.CATEGORIES -> CategoriesPage(
+                            categories = categories,
+                            usage = categoryUsage,
+                            onAdd = { showAddCategoryDialog = true },
+                            onEdit = { editingCategory = it },
+                            onDelete = { deletingCategory = it }
+                        )
+                        ManagePage.RULES -> RulesPage(
+                            mappings = mappings,
+                            onAdd = { showAddMappingDialog = true },
+                            onEdit = { editingMapping = it },
+                            onDelete = { deletingMapping = it }
+                        )
+                        ManagePage.TEMPLATES -> com.example.expensetracker.ui.components.PaymentTemplatesTabContent(
+                            templates = paymentTemplates,
+                            onAddTemplateClick = { showAddTemplateDialog = true },
+                            onEditTemplateClick = { editingTemplate = it },
+                            onTestTemplateClick = { testingTemplate = it },
+                            onToggleEnabledClick = onTogglePaymentTemplateEnabled,
+                            onDeleteTemplateClick = onDeletePaymentTemplate
+                        )
+                        ManagePage.ACCOUNTS -> com.example.expensetracker.ui.components.AccountsTabContent(
+                            accountsWithBalances = accountsWithBalances,
+                            transactions = transactions,
+                            unassignedCount = unassignedTransactionCount,
+                            onAddAccountClick = { showAddAccountDialog = true },
+                            onEditAccountClick = { editingAccount = it },
+                            onSetPrimaryAccountClick = onSetPrimaryAccount,
+                            onToggleArchivedClick = { acc -> onSetAccountArchived(acc.id, !acc.isArchived) },
+                            onDeleteAccountClick = onDeleteAccount,
+                            onAssignUnassignedClick = onAssignUnassignedTransactions,
+                            onAssignSelectedUnassigned = onAssignSelectedUnassigned
+                        )
+                        ManagePage.BACKUP -> com.example.expensetracker.ui.components.BackupTabContent(
+                            totalTransactions = totalTransactionCount,
+                            totalAccounts = accountsWithBalances.size,
+                            totalCategories = categories.size,
+                            totalSplitGroups = 0,
+                            totalTemplates = paymentTemplates.size,
+                            backupExportState = backupExportState,
+                            backupImportState = backupImportState,
+                            onExportToUri = onExportBackupToUri,
+                            onShareBackup = onShareBackup,
+                            onImportFileSelected = onImportBackupFile,
+                            onConfirmImport = onConfirmImport,
+                            onDismissState = onDismissBackupState,
+                            onDismissImportState = onDismissImportState
+                        )
+                    }
+                }
+            }
+        }
+    }
+ 
+    // ── Account dialog ──
     if (showAddAccountDialog || editingAccount != null) {
         val editingCurrentBalancePaise = editingAccount?.let { acc ->
             accountsWithBalances.firstOrNull { it.account.id == acc.id }?.currentBalancePaise
@@ -149,108 +300,8 @@ fun ManagementScreen(
             onSave = onSaveAccount
         )
     }
-
-    if (isCreatingGroup || editingGroup != null) {
-        com.example.expensetracker.ui.components.CreateOrEditSplitGroupScreen(
-            initialGroup = editingGroup,
-            onSaveGroup = onSaveSplitGroup,
-            onCancel = {
-                isCreatingGroup = false
-                editingGroup = null
-            }
-        )
-    } else {
-        Box(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Column(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                val appColors = LocalAppColors.current
-
-                val sections = listOf(
-                    ManageSection(0, "Categories", categories.size),
-                    ManageSection(1, "Regex mappings", mappings.size),
-                    ManageSection(2, "Templates", paymentTemplates.size),
-                    ManageSection(3, "Split groups", splitGroups.size),
-                    ManageSection(4, "Accounts", accountsWithBalances.size),
-                    ManageSection(5, "Backup & Export")
-                )
-
-                ManageSectionSelector(
-                    sections = sections,
-                    selectedIndex = selectedTabIndex,
-                    onSectionSelected = { selectedTabIndex = it }
-                )
-
-                when (selectedTabIndex) {
-                    0 -> CategoryTabContent(
-                        categories = categories,
-                        onAddCategoryClick = { showAddCategoryDialog = true },
-                        onEditCategoryClick = { editingCategory = it },
-                        onDeleteCategoryClick = { deletingCategory = it }
-                    )
-                    1 -> MappingTabContent(
-                        mappings = mappings,
-                        categories = categories,
-                        onAddMappingClick = { showAddMappingDialog = true },
-                        onEditMappingClick = { editingMapping = it },
-                        onDeleteMappingClick = onDeleteMapping
-                    )
-                    2 -> com.example.expensetracker.ui.components.PaymentTemplatesTabContent(
-                        templates = paymentTemplates,
-                        onAddTemplateClick = { showAddTemplateDialog = true },
-                        onEditTemplateClick = { editingTemplate = it },
-                        onTestTemplateClick = { testingTemplate = it },
-                        onToggleEnabledClick = onTogglePaymentTemplateEnabled,
-                        onDeleteTemplateClick = onDeletePaymentTemplate
-                    )
-                    3 -> com.example.expensetracker.ui.components.SplitGroupsTabContent(
-                        splitGroups = splitGroups,
-                        onAddGroupClick = { isCreatingGroup = true },
-                        onEditGroupClick = { editingGroup = it },
-                        onDeleteGroupClick = { deletingGroup = it }
-                    )
-                    4 -> com.example.expensetracker.ui.components.AccountsTabContent(
-                        accountsWithBalances = accountsWithBalances,
-                        transactions = transactions,
-                        allObservations = allObservations,
-                        unassignedCount = unassignedTransactionCount,
-                        unresolvedObservations = unresolvedObservations,
-                        reconciliationResults = reconciliationResults,
-                        onAddAccountClick = { showAddAccountDialog = true },
-                        onEditAccountClick = { editingAccount = it },
-                        onSetPrimaryAccountClick = onSetPrimaryAccount,
-                        onToggleArchivedClick = { acc -> onSetAccountArchived(acc.id, !acc.isArchived) },
-                        onDeleteAccountClick = onDeleteAccount,
-                        onAssignUnassignedClick = onAssignUnassignedTransactions,
-                        onAssignSelectedUnassigned = onAssignSelectedUnassigned,
-                        onAddReconciliationExpense = onAddReconciliationExpense,
-                        onReviewReconciliationTransactions = onReviewReconciliationTransactions,
-                        onResolveObservation = onResolveObservation,
-                        onDeleteObservation = onDeleteObservation
-                    )
-                    5 -> com.example.expensetracker.ui.components.BackupTabContent(
-                        totalTransactions = totalTransactionCount,
-                        totalAccounts = accountsWithBalances.size,
-                        totalCategories = categories.size,
-                        totalSplitGroups = splitGroups.size,
-                        totalTemplates = paymentTemplates.size,
-                        backupExportState = backupExportState,
-                        backupImportState = backupImportState,
-                        onExportToUri = onExportBackupToUri,
-                        onShareBackup = onShareBackup,
-                        onImportFileSelected = onImportBackupFile,
-                        onConfirmImport = onConfirmImport,
-                        onDismissState = onDismissBackupState,
-                        onDismissImportState = onDismissImportState
-                    )
-                }
-            }
-        }
-    }
-
-    // --- Payment Template Dialogs ---
+ 
+    // ── Template dialogs ──
     if (showAddTemplateDialog) {
         com.example.expensetracker.ui.components.AddOrEditTemplateDialog(
             title = "Add Payment Template",
@@ -263,7 +314,7 @@ fun ManagementScreen(
             }
         )
     }
-
+ 
     editingTemplate?.let { template ->
         com.example.expensetracker.ui.components.AddOrEditTemplateDialog(
             title = "Edit Payment Template",
@@ -282,15 +333,15 @@ fun ManagementScreen(
             }
         )
     }
-
+ 
     testingTemplate?.let { template ->
         com.example.expensetracker.ui.components.TestTemplateDialog(
             template = template,
             onDismiss = { testingTemplate = null }
         )
     }
-
-    // --- Category Dialogs ---
+ 
+    // ── Category dialogs ──
     if (showAddCategoryDialog) {
         AddOrEditCategoryDialog(
             title = "Add New Category",
@@ -302,7 +353,7 @@ fun ManagementScreen(
             }
         )
     }
-
+ 
     editingCategory?.let { category ->
         AddOrEditCategoryDialog(
             title = "Edit Category",
@@ -314,31 +365,23 @@ fun ManagementScreen(
             }
         )
     }
-
+ 
     deletingCategory?.let { category ->
         AlertDialog(
             onDismissRequest = { deletingCategory = null },
             title = { Text("Delete Category?") },
             text = { Text("Transactions under '${category.name}' will be safely moved to 'Other'.") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteCategory(category)
-                        deletingCategory = null
-                    }
-                ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
+                TextButton(onClick = {
+                    onDeleteCategory(category)
+                    deletingCategory = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = {
-                TextButton(onClick = { deletingCategory = null }) {
-                    Text("Cancel")
-                }
-            }
+            dismissButton = { TextButton(onClick = { deletingCategory = null }) { Text("Cancel") } }
         )
     }
-
-    // --- Mapping Dialogs ---
+ 
+    // ── Rule dialogs ──
     if (showAddMappingDialog) {
         AddOrEditMappingDialog(
             title = "Add Mapping Rule",
@@ -353,7 +396,7 @@ fun ManagementScreen(
             }
         )
     }
-
+ 
     editingMapping?.let { mapping ->
         AddOrEditMappingDialog(
             title = "Edit Mapping Rule",
@@ -368,408 +411,351 @@ fun ManagementScreen(
             }
         )
     }
-
-    deletingGroup?.let { group ->
+ 
+    deletingMapping?.let { mapping ->
         AlertDialog(
-            onDismissRequest = { deletingGroup = null },
-            title = { Text("Delete Split Group?") },
-            text = { Text("Are you sure you want to delete '${group.name}'? Its members will be removed. Existing transactions will not be affected.") },
+            onDismissRequest = { deletingMapping = null },
+            title = { Text("Delete rule?") },
+            text = { Text("New transactions matching this pattern will no longer be auto-assigned to '${mapping.categoryName}'.") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteSplitGroup(group)
-                        deletingGroup = null
-                    }
-                ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
+                TextButton(onClick = {
+                    onDeleteMapping(mapping)
+                    deletingMapping = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = {
-                TextButton(onClick = { deletingGroup = null }) {
-                    Text("Cancel")
-                }
-            }
+            dismissButton = { TextButton(onClick = { deletingMapping = null }) { Text("Cancel") } }
         )
     }
 }
-
-private data class ManageSection(
-    val index: Int,
-    val label: String,
-    val count: Int? = null
-)
-
-// Fixed, wrapping section selector. Every section stays on-screen at once; nothing scrolls off.
-@OptIn(ExperimentalLayoutApi::class)
+ 
+// ───────────────────────── Hub ─────────────────────────
+ 
 @Composable
-private fun ManageSectionSelector(
-    sections: List<ManageSection>,
-    selectedIndex: Int,
-    onSectionSelected: (Int) -> Unit
+private fun ManageHub(
+    unassignedCount: Int,
+    groups: List<Pair<String, List<HubItem>>>,
+    onOpen: (ManagePage) -> Unit
 ) {
     val appColors = LocalAppColors.current
-
+ 
     Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        // Only surface what needs action
+        if (unassignedCount > 0) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = appColors.accentSoft,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { onOpen(ManagePage.ACCOUNTS) }
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Info, null, tint = appColors.accent, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "${plural(unassignedCount, "transaction")} without an account",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                            color = appColors.accent
+                        )
+                        Text("Tap to assign them", fontSize = 12.sp, color = appColors.inkMuted)
+                    }
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = appColors.accent)
+                }
+            }
+        }
+ 
+        groups.forEach { (label, items) ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp
+                    ),
+                    color = appColors.inkFaint,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+                ManageSurface {
+                    Column {
+                        items.forEachIndexed { index, item ->
+                            HubRow(item = item, onClick = { onOpen(item.page) })
+                            if (index < items.lastIndex) {
+                                HorizontalDivider(
+                                    color = appColors.border,
+                                    modifier = Modifier.padding(start = 66.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+ 
+@Composable
+private fun HubRow(item: HubItem, onClick: () -> Unit) {
+    val appColors = LocalAppColors.current
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "Section",
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.8.sp
-            ),
-            color = appColors.inkFaint
-        )
-        Spacer(modifier = Modifier.height(AppSpacing.xs))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
-            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .background(appColors.accentSoft, RoundedCornerShape(11.dp)),
+            contentAlignment = Alignment.Center
         ) {
-            sections.forEach { section ->
-                val selected = selectedIndex == section.index
-                FilterChip(
-                    selected = selected,
-                    onClick = { onSectionSelected(section.index) },
-                    label = {
+            Icon(item.icon, null, tint = appColors.accent, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(item.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = appColors.ink)
+            Text(
+                item.subtitle,
+                fontSize = 12.sp,
+                color = appColors.inkMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = appColors.inkFaint)
+    }
+}
+ 
+// ───────────────────────── Detail header ─────────────────────────
+ 
+@Composable
+private fun PageHeader(
+    title: String,
+    subtitle: String?,
+    onBack: () -> Unit,
+    onAdd: (() -> Unit)?
+) {
+    val appColors = LocalAppColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = appColors.ink)
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = appColors.ink
+            )
+            if (subtitle != null) {
+                Text(subtitle, fontSize = 12.sp, color = appColors.inkFaint)
+            }
+        }
+        if (onAdd != null) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(appColors.accent)
+                    .clickable(onClick = onAdd)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Add, null, tint = appColors.accentInk, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = appColors.accentInk)
+            }
+        }
+    }
+}
+ 
+// ───────────────────────── Categories ─────────────────────────
+ 
+@Composable
+private fun CategoriesPage(
+    categories: List<CategoryEntity>,
+    usage: Map<String, Int>,
+    onAdd: () -> Unit,
+    onEdit: (CategoryEntity) -> Unit,
+    onDelete: (CategoryEntity) -> Unit
+) {
+    val appColors = LocalAppColors.current
+ 
+    if (categories.isEmpty()) {
+        ManageEmptyState(
+            title = "No categories yet",
+            message = "Categories group your spending so analytics can show where your money goes.",
+            actionLabel = "Add category",
+            onAction = onAdd
+        )
+        return
+    }
+ 
+    LazyColumn(
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(categories, key = { it.id }) { category ->
+            val categoryEnum = try {
+                com.example.expensetracker.model.TransactionCategory.valueOf(category.name.uppercase())
+            } catch (e: Exception) {
+                com.example.expensetracker.model.TransactionCategory.OTHER
+            }
+            val (_, catColor, catSoftBg) = getCategoryIconAndColor(categoryEnum, appColors.isDark)
+            val count = usage[category.name.lowercase()] ?: 0
+ 
+            ManageSurface(onClick = { onEdit(category) }) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(catSoftBg, RoundedCornerShape(11.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
-                            text = if (section.count != null) "${section.label} (${section.count})" else section.label,
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                fontSize = 12.5.sp
+                            text = category.name.take(1).uppercase(),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = catColor
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            category.name,
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = appColors.ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            if (count == 0) "No transactions yet" else plural(count, "transaction"),
+                            fontSize = 12.sp,
+                            color = appColors.inkFaint
+                        )
+                    }
+                    ManageOverflowMenu(
+                        actions = listOf(
+                            ManageMenuAction("Rename") { onEdit(category) },
+                            ManageMenuAction("Delete", destructive = true) { onDelete(category) }
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+ 
+// ───────────────────────── Rules ─────────────────────────
+ 
+@Composable
+private fun RulesPage(
+    mappings: List<CategoryMappingEntity>,
+    onAdd: () -> Unit,
+    onEdit: (CategoryMappingEntity) -> Unit,
+    onDelete: (CategoryMappingEntity) -> Unit
+) {
+    val appColors = LocalAppColors.current
+ 
+    if (mappings.isEmpty()) {
+        ManageEmptyState(
+            title = "No rules yet",
+            message = "A rule assigns a category automatically when a transaction's text matches a pattern, like \"swiggy\" → Food.",
+            actionLabel = "Add rule",
+            onAction = onAdd
+        )
+        return
+    }
+ 
+    val sorted = remember(mappings) { mappings.sortedBy { it.priority } }
+ 
+    LazyColumn(
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        item {
+            Text(
+                "Rules run top to bottom. The first one that matches decides the category.",
+                fontSize = 12.sp,
+                color = appColors.inkMuted,
+                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+            )
+        }
+        items(sorted, key = { it.id }) { mapping ->
+            ManageSurface(onClick = { onEdit(mapping) }) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ManagePill("#${mapping.priority}", appColors.surfaceAlt, appColors.inkMuted)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = mapping.pattern,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            color = appColors.ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ManageOverflowMenu(
+                            actions = listOf(
+                                ManageMenuAction("Edit") { onEdit(mapping) },
+                                ManageMenuAction("Delete", destructive = true) { onDelete(mapping) }
                             )
                         )
-                    },
-                    shape = RoundedCornerShape(100.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = appColors.accentSoft,
-                        selectedLabelColor = appColors.accent,
-                        containerColor = appColors.surfaceAlt,
-                        labelColor = appColors.inkMuted
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = selected,
-                        borderColor = appColors.border,
-                        selectedBorderColor = appColors.accent
-                    )
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(AppSpacing.sm))
-        HorizontalDivider(color = appColors.border)
-    }
-}
-
-@Composable
-private fun CategoryTabContent(
-    categories: List<CategoryEntity>,
-    onAddCategoryClick: () -> Unit,
-    onEditCategoryClick: (CategoryEntity) -> Unit,
-    onDeleteCategoryClick: (CategoryEntity) -> Unit
-) {
-    val appColors = LocalAppColors.current
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            items(categories, key = { it.id }) { category ->
-                val categoryEnum = try {
-                    com.example.expensetracker.model.TransactionCategory.valueOf(category.name.uppercase())
-                } catch (e: Exception) {
-                    com.example.expensetracker.model.TransactionCategory.OTHER
-                }
-                val (_, catColor, catSoftBg) = com.example.expensetracker.ui.components.getCategoryIconAndColor(
-                    categoryEnum,
-                    appColors.isDark
-                )
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = appColors.cardBackground),
-                    border = BorderStroke(1.dp, appColors.cardBorder),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(end = 12.dp)
-                                    .size(34.dp)
-                                    .background(catSoftBg, RoundedCornerShape(10.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = category.name.take(1).uppercase(),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = catColor
-                                )
-                            }
-                            Text(
-                                text = category.name,
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 13.5.sp
-                                ),
-                                color = appColors.ink
-                            )
-                        }
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // Soft action buttons
-                            Box(
-                                modifier = Modifier
-                                    .size(30.dp)
-                                    .background(appColors.surfaceAlt, RoundedCornerShape(8.dp))
-                                    .clickable { onEditCategoryClick(category) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Edit",
-                                    tint = appColors.inkMuted,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .size(30.dp)
-                                    .background(appColors.surfaceAlt, RoundedCornerShape(8.dp))
-                                    .clickable { onDeleteCategoryClick(category) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete",
-                                    tint = appColors.negative,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        }
                     }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Dashed "+ Add category" block button
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onAddCategoryClick() },
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = appColors.surfaceAlt),
-            border = BorderStroke(1.dp, appColors.border),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = null,
-                    tint = appColors.ink,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Add category",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    ),
-                    color = appColors.ink
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MappingTabContent(
-    mappings: List<CategoryMappingEntity>,
-    categories: List<CategoryEntity>,
-    onAddMappingClick: () -> Unit,
-    onEditMappingClick: (CategoryMappingEntity) -> Unit,
-    onDeleteMappingClick: (CategoryMappingEntity) -> Unit
-) {
-    val appColors = LocalAppColors.current
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            items(mappings, key = { it.id }) { mapping ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = appColors.cardBackground),
-                    border = BorderStroke(1.dp, appColors.cardBorder),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 2.dp)
                     ) {
-                        // Monospace Pattern Box
+                        Text("assigns", fontSize = 12.sp, color = appColors.inkFaint)
+                        Spacer(Modifier.width(8.dp))
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .background(appColors.surfaceAlt, RoundedCornerShape(8.dp))
-                                .padding(horizontal = 9.dp, vertical = 6.dp)
+                                .background(appColors.accentSoft, RoundedCornerShape(100.dp))
+                                .padding(horizontal = 10.dp, vertical = 3.dp)
                         ) {
                             Text(
-                                text = mapping.pattern,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 11.5.sp,
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                ),
-                                color = appColors.ink,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                mapping.categoryName,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = appColors.accent
                             )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "→ ",
-                                    fontSize = 12.sp,
-                                    color = appColors.inkFaint
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .background(appColors.accentSoft, RoundedCornerShape(100.dp))
-                                        .padding(horizontal = 9.dp, vertical = 3.dp)
-                                ) {
-                                    Text(
-                                        text = mapping.categoryName,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = appColors.accent
-                                    )
-                                }
-                            }
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(30.dp)
-                                        .background(appColors.surfaceAlt, RoundedCornerShape(8.dp))
-                                        .clickable { onEditMappingClick(mapping) },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = "Edit",
-                                        tint = appColors.inkMuted,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .size(30.dp)
-                                        .background(appColors.surfaceAlt, RoundedCornerShape(8.dp))
-                                        .clickable { onDeleteMappingClick(mapping) },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Delete",
-                                        tint = appColors.negative,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
                         }
                     }
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Dashed "+ Add rule" block button
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onAddMappingClick() },
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = appColors.surfaceAlt),
-            border = BorderStroke(1.dp, appColors.border),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = null,
-                    tint = appColors.ink,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Add rule",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    ),
-                    color = appColors.ink
-                )
-            }
-        }
     }
 }
-
+ 
+// ───────────────────────── Dialogs (unchanged behavior) ─────────────────────────
+ 
 @Composable
 private fun AddOrEditCategoryDialog(
     title: String,
@@ -778,7 +764,7 @@ private fun AddOrEditCategoryDialog(
     onSave: (String) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
-
+ 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -792,19 +778,12 @@ private fun AddOrEditCategoryDialog(
             )
         },
         confirmButton = {
-            TextButton(
-                enabled = name.isNotBlank(),
-                onClick = { onSave(name.trim()) }
-            ) {
-                Text("Save")
-            }
+            TextButton(enabled = name.isNotBlank(), onClick = { onSave(name.trim()) }) { Text("Save") }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
-
+ 
 @Composable
 private fun AddOrEditMappingDialog(
     title: String,
@@ -819,10 +798,10 @@ private fun AddOrEditMappingDialog(
     var selectedCategory by remember { mutableStateOf(initialCategory) }
     var priorityText by remember { mutableStateOf(initialPriority.toString()) }
     var dropdownExpanded by remember { mutableStateOf(false) }
-
+ 
     val isRegexValid = CategoryMapper.isValidRegex(pattern)
     val showError = pattern.isNotBlank() && !isRegexValid
-
+ 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -841,9 +820,9 @@ private fun AddOrEditMappingDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-
+ 
                 Spacer(modifier = Modifier.height(8.dp))
-
+ 
                 Text("Mapped Category:")
                 Spacer(modifier = Modifier.height(4.dp))
                 Box(
@@ -879,9 +858,9 @@ private fun AddOrEditMappingDialog(
                         }
                     }
                 }
-
+ 
                 Spacer(modifier = Modifier.height(8.dp))
-
+ 
                 OutlinedTextField(
                     value = priorityText,
                     onValueChange = { priorityText = it },
@@ -899,12 +878,9 @@ private fun AddOrEditMappingDialog(
                     val priority = priorityText.toIntOrNull() ?: 1
                     onSave(pattern.trim(), selectedCategory, priority)
                 }
-            ) {
-                Text("Save")
-            }
+            ) { Text("Save") }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
+ 

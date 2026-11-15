@@ -27,6 +27,7 @@ class TestDatabaseHarness : AppDatabase() {
     val sourceAccountMappingsTable = mutableListOf<SourceAccountMappingEntity>()
     val gPayRequestsTable = mutableListOf<GPayRequestEntity>()
     val gPayMemberMappingsTable = mutableListOf<GPayMemberMappingEntity>()
+    val transactionEditLogsTable = mutableListOf<TransactionEditLogEntity>()
 
     var enforceForeignKeys = true
 
@@ -44,7 +45,8 @@ class TestDatabaseHarness : AppDatabase() {
         val recurringExpenses: List<RecurringExpenseEntity>,
         val paymentTemplates: List<PaymentTemplateEntity>,
         val balanceObservations: List<BalanceObservationEntity>,
-        val sourceAccountMappings: List<SourceAccountMappingEntity>
+        val sourceAccountMappings: List<SourceAccountMappingEntity>,
+        val transactionEditLogs: List<TransactionEditLogEntity>
     )
 
     private fun takeSnapshot(): DbSnapshot {
@@ -62,7 +64,8 @@ class TestDatabaseHarness : AppDatabase() {
             recurringExpenses = recurringExpensesTable.toList(),
             paymentTemplates = paymentTemplatesTable.toList(),
             balanceObservations = balanceObservationsTable.toList(),
-            sourceAccountMappings = sourceAccountMappingsTable.toList()
+            sourceAccountMappings = sourceAccountMappingsTable.toList(),
+            transactionEditLogs = transactionEditLogsTable.toList()
         )
     }
 
@@ -81,6 +84,7 @@ class TestDatabaseHarness : AppDatabase() {
         paymentTemplatesTable.clear(); paymentTemplatesTable.addAll(s.paymentTemplates)
         balanceObservationsTable.clear(); balanceObservationsTable.addAll(s.balanceObservations)
         sourceAccountMappingsTable.clear(); sourceAccountMappingsTable.addAll(s.sourceAccountMappings)
+        transactionEditLogsTable.clear(); transactionEditLogsTable.addAll(s.transactionEditLogs)
     }
 
     override fun <V> runInTransaction(callable: Callable<V>): V {
@@ -577,6 +581,25 @@ class TestDatabaseHarness : AppDatabase() {
         override fun deleteById(id: String) { gPayMemberMappingsTable.removeAll { it.id == id } }
     }
 
+    override fun transactionEditLogDao(): TransactionEditLogDao = object : TransactionEditLogDao {
+        override fun getAllLogs(): Flow<List<TransactionEditLogEntity>> {
+            return flowOf(transactionEditLogsTable.sortedByDescending { it.editedAt })
+        }
+
+        override fun insert(log: TransactionEditLogEntity) {
+            transactionEditLogsTable.removeAll { it.id == log.id }
+            transactionEditLogsTable.add(log)
+        }
+
+        override fun getLogsForTransaction(transactionId: String): Flow<List<TransactionEditLogEntity>> {
+            return flowOf(transactionEditLogsTable.filter { it.transactionId == transactionId }.sortedByDescending { it.editedAt })
+        }
+
+        override fun getLogsForTransactionSync(transactionId: String): List<TransactionEditLogEntity> {
+            return transactionEditLogsTable.filter { it.transactionId == transactionId }.sortedByDescending { it.editedAt }
+        }
+    }
+
     override fun createInvalidationTracker(): androidx.room.InvalidationTracker {
         return androidx.room.InvalidationTracker(this, "accounts", "categories", "transactions")
     }
@@ -598,5 +621,6 @@ class TestDatabaseHarness : AppDatabase() {
         sourceAccountMappingsTable.clear()
         gPayRequestsTable.clear()
         gPayMemberMappingsTable.clear()
+        transactionEditLogsTable.clear()
     }
 }

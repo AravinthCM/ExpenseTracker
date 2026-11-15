@@ -1,5 +1,6 @@
 package com.example.expensetracker.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,12 +30,13 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -56,19 +60,19 @@ import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.model.TransactionCategory
 import com.example.expensetracker.model.TransactionSource
 import com.example.expensetracker.model.TransactionType
+import com.example.expensetracker.data.local.TransactionEditLogEntity
 import com.example.expensetracker.ui.theme.LocalAppColors
 import com.example.expensetracker.ui.util.CurrencyFormatter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.roundToLong
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AddOrEditTransactionBottomSheet(
     initialTransaction: Transaction? = null,
-    isSplitExpense: Boolean = false,
-    onConvertSplitToRegular: (() -> String?)? = null,
     availableCategories: List<String> = emptyList(),
     accounts: List<com.example.expensetracker.data.local.AccountEntity> = emptyList(),
     defaultAccountId: String? = null,
@@ -89,7 +93,6 @@ fun AddOrEditTransactionBottomSheet(
     }
     var balanceIncludedInAccount by remember { mutableStateOf(initialTransaction?.balanceIncludedInAccount) }
     var balanceInclusionError by remember { mutableStateOf<String?>(null) }
-    var showSplitConversionConfirm by remember { mutableStateOf(false) }
     var accountDropdownExpanded by remember { mutableStateOf(false) }
     var dateText by remember {
         mutableStateOf(
@@ -99,6 +102,22 @@ fun AddOrEditTransactionBottomSheet(
 
     var amountError by remember { mutableStateOf<String?>(null) }
     var titleError by remember { mutableStateOf<String?>(null) }
+    var quickMathOriginalAmountText by remember { mutableStateOf<String?>(null) }
+    var quickMathSummary by remember { mutableStateOf<String?>(null) }
+
+    fun applyQuickAmountAction(label: String, transform: (Double) -> Double) {
+        val current = amountText.toDoubleOrNull() ?: return
+        if (current <= 0.0) return
+        val updated = roundCurrencyAmount(transform(current))
+        if (updated <= 0.0) return
+
+        val originalText = quickMathOriginalAmountText ?: amountText
+        val originalAmount = originalText.toDoubleOrNull() ?: current
+        quickMathOriginalAmountText = originalText
+        amountText = formatAmountForInput(updated)
+        amountError = null
+        quickMathSummary = "From ${CurrencyFormatter.format(originalAmount)} to ${CurrencyFormatter.format(updated)} ($label)"
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -156,12 +175,6 @@ fun AddOrEditTransactionBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (initialTransaction != null && isSplitExpense) {
-                TextButton(onClick = { showSplitConversionConfirm = true }) {
-                    Text("Convert split expense to regular expense", color = appColors.negative)
-                }
-            }
-
             // Type Toggle Row
             Row(
                 modifier = Modifier
@@ -172,8 +185,7 @@ fun AddOrEditTransactionBottomSheet(
             ) {
                 val types = listOf(
                     Triple(TransactionType.EXPENSE, "Expense", appColors.negativeSoft to appColors.negative),
-                    Triple(TransactionType.INCOME, "Income", appColors.positiveSoft to appColors.positive),
-                    Triple(TransactionType.TRANSFER, "Transfer", appColors.transferSoft to appColors.transfer)
+                    Triple(TransactionType.INCOME, "Income", appColors.positiveSoft to appColors.positive)
                 )
 
                 types.forEach { (t, label, colors) ->
@@ -235,6 +247,8 @@ fun AddOrEditTransactionBottomSheet(
                     onValueChange = {
                         amountText = it
                         amountError = null
+                        quickMathOriginalAmountText = null
+                        quickMathSummary = null
                     },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 15.sp,
@@ -249,6 +263,72 @@ fun AddOrEditTransactionBottomSheet(
             amountError?.let {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(text = it, fontSize = 11.sp, color = appColors.negative)
+            }
+
+            val amountValue = amountText.toDoubleOrNull()
+            if (amountValue != null && amountValue > 0.0) {
+                Spacer(modifier = Modifier.height(10.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val quickActions = listOf(
+                        "÷2" to { value: Double -> value / 2.0 },
+                        "÷3" to { value: Double -> value / 3.0 },
+                        "÷4" to { value: Double -> value / 4.0 },
+                        "×2" to { value: Double -> value * 2.0 },
+                        "+10%" to { value: Double -> value * 1.10 }
+                    )
+
+                    quickActions.forEach { (label, action) ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .background(appColors.surfaceAlt)
+                                .border(1.dp, appColors.border, RoundedCornerShape(100.dp))
+                                .clickable { applyQuickAmountAction(label, action) }
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp
+                                ),
+                                color = appColors.ink
+                            )
+                        }
+                    }
+
+                }
+
+                quickMathSummary?.let { summary ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = summary,
+                            fontSize = 11.sp,
+                            color = appColors.inkFaint,
+                            modifier = Modifier.weight(1f)
+                        )
+                        quickMathOriginalAmountText?.let { original ->
+                            TextButton(
+                                onClick = {
+                                    amountText = original
+                                    quickMathOriginalAmountText = null
+                                    quickMathSummary = null
+                                }
+                            ) {
+                                Text("Undo", color = appColors.accent, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -389,40 +469,19 @@ fun AddOrEditTransactionBottomSheet(
                 }
             }
 
-            if (type == TransactionType.EXPENSE && selectedAccountId != null) {
+            if (type == TransactionType.EXPENSE && selectedAccountId == null) {
                 Spacer(modifier = Modifier.height(14.dp))
                 Text(
-                    text = "Has this expense already been included in the account balance?",
+                    text = "Account balance behavior",
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
                     color = appColors.inkMuted
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Already included means the bank balance already reflects it, so it will not be deducted again.",
+                    text = "This expense is currently unassigned. Assign a bank account if you want account-balance tracking for this transaction.",
                     fontSize = 11.sp,
                     color = appColors.inkFaint
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = balanceIncludedInAccount == true,
-                        onClick = {
-                            balanceIncludedInAccount = true
-                            balanceInclusionError = null
-                        }
-                    )
-                    Text("Yes - Already included", fontSize = 12.5.sp)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = balanceIncludedInAccount == false,
-                        onClick = {
-                            balanceIncludedInAccount = false
-                            balanceInclusionError = null
-                        }
-                    )
-                    Text("No - Not included yet", fontSize = 12.5.sp)
-                }
-                balanceInclusionError?.let { Text(it, fontSize = 11.sp, color = appColors.negative) }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -471,17 +530,14 @@ fun AddOrEditTransactionBottomSheet(
                         titleError = "Enter merchant / description"
                         hasErr = true
                     }
-                    if (type == TransactionType.EXPENSE && selectedAccountId != null && balanceIncludedInAccount == null) {
-                        balanceInclusionError = "Choose whether the expense is already included in the account balance."
-                        hasErr = true
-                    }
-
                     if (!hasErr && parsedAmount != null) {
+                        val savedCategoryName = selectedCategory.name.lowercase().replaceFirstChar { it.uppercase() }
                         val savedTx = initialTransaction?.copy(
                             title = trimmedTitle,
                             amount = parsedAmount,
                             type = type,
                             category = selectedCategory,
+                            categoryName = savedCategoryName,
                             date = dateText,
                             accountId = selectedAccountId,
                             balanceIncludedInAccount = if (type == TransactionType.EXPENSE && selectedAccountId != null) balanceIncludedInAccount else null
@@ -491,6 +547,7 @@ fun AddOrEditTransactionBottomSheet(
                             amount = parsedAmount,
                             type = type,
                             category = selectedCategory,
+                            categoryName = savedCategoryName,
                             date = dateText,
                             source = TransactionSource.MANUAL,
                             accountId = selectedAccountId,
@@ -519,19 +576,20 @@ fun AddOrEditTransactionBottomSheet(
         }
     }
 
-    if (showSplitConversionConfirm) {
-        AlertDialog(
-            onDismissRequest = { showSplitConversionConfirm = false },
-            title = { Text("Convert to regular expense?") },
-            text = { Text("This removes the split shares for this expense. Existing repayment settlements are protected and must be handled first if present.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    val error = onConvertSplitToRegular?.invoke()
-                    if (error == null) onDismiss() else showSplitConversionConfirm = false
-                }) { Text("Convert") }
-            },
-            dismissButton = { TextButton(onClick = { showSplitConversionConfirm = false }) { Text("Cancel") } }
-        )
+}
+
+private fun roundCurrencyAmount(value: Double): Double {
+    return (value * 100.0).roundToLong() / 100.0
+}
+
+private fun formatAmountForInput(value: Double): String {
+    val rounded = roundCurrencyAmount(value)
+    return if (rounded % 1.0 == 0.0) {
+        rounded.roundToLong().toString()
+    } else {
+        "%.2f".format(Locale.US, rounded)
+            .trimEnd('0')
+            .trimEnd('.')
     }
 }
 
@@ -539,6 +597,7 @@ fun AddOrEditTransactionBottomSheet(
 @Composable
 fun TransactionDetailBottomSheet(
     transaction: Transaction,
+    editLogs: List<TransactionEditLogEntity> = emptyList(),
     onDismiss: () -> Unit,
     onEdit: (Transaction) -> Unit,
     onDelete: (Transaction) -> Unit
@@ -653,10 +712,14 @@ fun TransactionDetailBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            EditHistorySection(editLogs = editLogs)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Original Notification Box
             if (transaction.originalText.isNotBlank()) {
                 Text(
-                    text = "Original notification",
+                    text = "Notification",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = appColors.inkFaint
@@ -666,6 +729,8 @@ fun TransactionDetailBottomSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(appColors.surfaceAlt, RoundedCornerShape(12.dp))
+                        .heightIn(max = 140.dp)
+                        .verticalScroll(rememberScrollState())
                         .padding(12.dp)
                 ) {
                     Text(
@@ -781,6 +846,206 @@ fun TransactionDetailBottomSheet(
             containerColor = appColors.surface,
             shape = RoundedCornerShape(18.dp)
         )
+    }
+}
+
+@Composable
+private fun EditHistorySection(editLogs: List<TransactionEditLogEntity>) {
+    val appColors = LocalAppColors.current
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "Edit history",
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            color = appColors.ink
+        )
+        if (editLogs.isNotEmpty()) {
+            Text(
+                text = "${editLogs.size} edits",
+                fontSize = 11.sp,
+                color = appColors.inkFaint
+            )
+        }
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+
+    if (editLogs.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(appColors.surfaceAlt, RoundedCornerShape(12.dp))
+                .border(1.dp, appColors.border, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Text(
+                text = "No edits yet. Changes to this transaction will appear here with time and field-level details.",
+                color = appColors.inkFaint,
+                fontSize = 12.sp
+            )
+        }
+        return
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 220.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = appColors.surfaceAlt),
+        border = BorderStroke(1.dp, appColors.border),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            editLogs.forEachIndexed { index, log ->
+                if (index > 0) {
+                    androidx.compose.material3.HorizontalDivider(
+                        color = appColors.border,
+                        thickness = 1.dp
+                    )
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Edit ${editLogs.size - index}",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = appColors.inkMuted
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (log.editSource == "CATEGORY_LEARN") {
+                                Box(
+                                    modifier = Modifier
+                                        .background(appColors.accentSoft, RoundedCornerShape(100.dp))
+                                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        text = "Auto rule",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = appColors.accent
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            Text(
+                                text = formatEditLogTime(log.editedAt),
+                                fontSize = 11.sp,
+                                color = appColors.inkFaint
+                            )
+                        }
+                    }
+
+                    val parsedChanges = log.details.lineSequence()
+                        .map { parseEditDetailLine(it) }
+                        .filterNotNull()
+                        .toList()
+
+                    if (parsedChanges.isEmpty()) {
+                        Text(
+                            text = log.details,
+                            fontSize = 11.5.sp,
+                            color = appColors.inkMuted,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        parsedChanges.forEach { change ->
+                            EditHistoryChangeRow(
+                                field = change.field,
+                                oldValue = change.oldValue,
+                                newValue = change.newValue
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class ParsedEditChange(
+    val field: String,
+    val oldValue: String,
+    val newValue: String
+)
+
+private fun parseEditDetailLine(line: String): ParsedEditChange? {
+    val trimmed = line.trim()
+    if (trimmed.isBlank()) return null
+    val colon = trimmed.indexOf(":")
+    val arrow = trimmed.indexOf("->")
+    if (colon <= 0 || arrow <= colon) return null
+
+    val field = trimmed.substring(0, colon).trim()
+    val oldValue = trimmed.substring(colon + 1, arrow).trim()
+    val newValue = trimmed.substring(arrow + 2).trim()
+    if (field.isBlank()) return null
+
+    return ParsedEditChange(field = field, oldValue = oldValue, newValue = newValue)
+}
+
+@Composable
+private fun EditHistoryChangeRow(
+    field: String,
+    oldValue: String,
+    newValue: String
+) {
+    val appColors = LocalAppColors.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(appColors.surface, RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Text(
+            text = field.replaceFirstChar { it.uppercase() },
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = appColors.inkFaint
+        )
+        Text(
+            text = oldValue,
+            fontSize = 11.5.sp,
+            color = appColors.inkMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = "→ $newValue",
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = appColors.ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+private fun formatEditLogTime(timestamp: Long): String {
+    return try {
+        SimpleDateFormat("dd MMM, h:mm a", Locale.getDefault()).format(Date(timestamp))
+    } catch (_: Exception) {
+        "Unknown time"
     }
 }
 

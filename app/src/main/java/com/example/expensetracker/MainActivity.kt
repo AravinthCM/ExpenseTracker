@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -65,21 +64,17 @@ import com.example.expensetracker.ui.AnalyticsScreen
 import com.example.expensetracker.ui.DashboardScreen
 import com.example.expensetracker.ui.ManagementScreen
 import com.example.expensetracker.ui.TransactionsScreen
-import com.example.expensetracker.ui.components.EditTransactionDialog
 import com.example.expensetracker.ui.theme.ExpenseTrackerTheme
 import com.example.expensetracker.ui.theme.LocalAppColors
 import com.example.expensetracker.ui.viewmodel.TransactionViewModel
 
 import com.example.expensetracker.ui.TestDataScreen
 
-import com.example.expensetracker.ui.SettleUpScreen
-
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 enum class Screen(val title: String, val icon: ImageVector) {
     Overview("Overview", Icons.Default.Home),
     Transactions("Transactions", Icons.Default.List),
-    SettleUp("Settle Up", Icons.Default.Share),
     Analytics("Analytics", Icons.Default.DateRange),
     Management("Categories & rules", Icons.Default.Settings),
     TestData("Test Data", Icons.Default.Info),
@@ -117,25 +112,18 @@ fun ExpenseTrackerApp(
 ) {
     val transactions by viewModel.transactionsState.collectAsState()
     val categories by viewModel.categoriesState.collectAsState()
+    val transactionEditLogs by viewModel.transactionEditLogsState.collectAsState()
     val categoryMappings by viewModel.categoryMappingsState.collectAsState()
     val recurringExpenses by viewModel.recurringExpensesState.collectAsState()
     val testNotifications by viewModel.testNotificationsState.collectAsState()
     val paymentTemplates by viewModel.paymentTemplatesState.collectAsState()
-    val splitGroups by viewModel.splitGroupsState.collectAsState()
-    val expenseSplits by viewModel.expenseSplitsState.collectAsState()
-    val repayments by viewModel.repaymentsState.collectAsState()
     val accounts by viewModel.accountsState.collectAsState()
     val primaryAccount by viewModel.primaryAccountState.collectAsState()
     val accountsWithBalances by viewModel.accountsWithBalancesState.collectAsState()
     val selectedAccountId by viewModel.selectedAccountIdState.collectAsState()
     val isBalanceVisible by viewModel.isBalanceVisibleState.collectAsState()
-    val unresolvedObservations by viewModel.unresolvedObservationsState.collectAsState()
-    val allObservations by viewModel.allObservationsState.collectAsState()
-    val reconciliationResults by viewModel.reconciliationResultsState.collectAsState()
     val backupExportState by viewModel.backupExportState.collectAsState()
     val backupImportState by viewModel.backupImportState.collectAsState()
-    val gPayRequests by viewModel.gPayRequestsState.collectAsState()
-    val gPayMemberMappings by viewModel.gPayMemberMappingsState.collectAsState()
 
     val unassignedTransactionCount = remember(transactions) {
         transactions.count { it.accountId == null }
@@ -151,10 +139,8 @@ fun ExpenseTrackerApp(
     var showAddSheet by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
     var categoryLearningPreview by remember { mutableStateOf<TransactionViewModel.CategoryLearningPreview?>(null) }
-    var reconciliationSuggestedTransaction by remember { mutableStateOf<Transaction?>(null) }
     var selectedDetailTransaction by remember { mutableStateOf<Transaction?>(null) }
     var showSplash by rememberSaveable { mutableStateOf(true) }
-    var showGPayRequests by remember { mutableStateOf(false) }
 
         ExpenseTrackerTheme(darkTheme = isDarkTheme) {
         val appColors = LocalAppColors.current
@@ -202,7 +188,7 @@ fun ExpenseTrackerApp(
                     containerColor = appColors.surface,
                     tonalElevation = 0.dp
                 ) {
-                    val navItems = listOf(Screen.Overview, Screen.Transactions, Screen.SettleUp, Screen.Analytics, Screen.Management, Screen.TestData)
+                    val navItems = listOf(Screen.Overview, Screen.Transactions, Screen.Analytics, Screen.Management, Screen.TestData)
                     navItems.forEach { screen ->
                         val selected = currentScreen == screen
                         NavigationBarItem(
@@ -220,7 +206,6 @@ fun ExpenseTrackerApp(
                                     text = when (screen) {
                                         Screen.Overview -> "Home"
                                         Screen.Transactions -> "Transactions"
-                                        Screen.SettleUp -> "Settle Up"
                                         Screen.Analytics -> "Analytics"
                                         Screen.Management -> "Manage"
                                         Screen.TestData -> "Test Data"
@@ -287,57 +272,11 @@ fun ExpenseTrackerApp(
                     Screen.Transactions -> {
                         TransactionsScreen(
                             transactions = transactions,
+                            transactionEditLogs = transactionEditLogs,
                             categories = categories,
-                            splitGroups = splitGroups,
-                            expenseSplits = expenseSplits,
                             onEditTransaction = { transaction -> editingTransaction = transaction },
                             onDeleteTransaction = { transaction -> viewModel.deleteTransaction(transaction) },
-                            onRemoveSplit = { transactionId -> viewModel.removeSplitsForTransaction(transactionId) },
-                            onSaveEqualSplit = { txId, groupId -> viewModel.createEqualExpenseSplit(txId, groupId) },
-                            onSaveCustomSplit = { txId, groupId, customShares -> viewModel.createCustomExpenseSplit(txId, groupId, customShares) },
-                            onUndoSplit = { splitId -> viewModel.deleteExpenseSplit(splitId) },
-                            onNavigateToManageGroups = {
-                                managementInitialTab = 3
-                                currentScreen = Screen.Management
-                            }
                         )
-                    }
-                    Screen.SettleUp -> {
-                        if (showGPayRequests) {
-                            com.example.expensetracker.ui.GPayRequestsScreen(
-                                requests = gPayRequests,
-                                splitGroups = splitGroups,
-                                memberMappings = gPayMemberMappings,
-                                transactions = transactions,
-                                onAssignGroup = { requestId, groupId -> viewModel.assignGPayRequestGroup(requestId, groupId) },
-                                onAssignMember = { requestId, memberId, remember -> viewModel.assignGPayRequestMember(requestId, memberId, remember) },
-                                onDismissRequest = { requestId -> viewModel.dismissGPayRequest(requestId) },
-                                onCloseRequest = { requestId, transactionId -> viewModel.closeGPayRequest(requestId, transactionId) },
-                                onConfirmExpense = { requestId -> viewModel.confirmGPayRequestAsExpense(requestId) },
-                                onConfirmRepayment = { requestId ->
-                                    val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
-                                    viewModel.confirmGPayRepayment(requestId, today)
-                                },
-                                onNavigateBack = { showGPayRequests = false }
-                            )
-                        } else {
-                            SettleUpScreen(
-                                expenseSplits = expenseSplits,
-                                splitGroups = splitGroups,
-                                transactions = transactions,
-                                repayments = repayments,
-                                onRecordRepayment = { groupId, memberId, amountPaise, date, linkedTxId, note ->
-                                    viewModel.recordRepayment(groupId, memberId, amountPaise, date, linkedTxId, note)
-                                },
-                                onUndoRepayment = { repaymentId ->
-                                    viewModel.deleteRepayment(repaymentId)
-                                },
-                                onRemoveSplit = { splitId -> viewModel.removeSplit(splitId) },
-                                onNavigateToTransactions = { currentScreen = Screen.Transactions },
-                                gPayPendingRequestCount = gPayRequests.count { it.processingStatus == com.example.expensetracker.model.GPayProcessingStatus.PENDING },
-                                onOpenGPayRequests = { showGPayRequests = true }
-                            )
-                        }
                     }
                     Screen.Analytics -> {
                         AnalyticsScreen(
@@ -359,10 +298,8 @@ fun ExpenseTrackerApp(
                             categories = categories,
                             mappings = categoryMappings,
                             paymentTemplates = paymentTemplates,
-                            splitGroups = splitGroups,
                             accountsWithBalances = accountsWithBalances,
                             transactions = transactions,
-                            allObservations = allObservations,
                             unassignedTransactionCount = unassignedTransactionCount,
                             initialSelectedTab = managementInitialTab,
                             initialSampleForTemplate = sampleForTemplate,
@@ -379,8 +316,6 @@ fun ExpenseTrackerApp(
                             onUpdatePaymentTemplate = { template -> viewModel.updatePaymentTemplate(template) },
                             onTogglePaymentTemplateEnabled = { template -> viewModel.togglePaymentTemplateEnabled(template) },
                             onDeletePaymentTemplate = { template -> viewModel.deletePaymentTemplate(template) },
-                            onSaveSplitGroup = { groupId, name, members -> viewModel.saveSplitGroup(groupId, name, members) },
-                            onDeleteSplitGroup = { group -> viewModel.deleteSplitGroup(group) },
                             onSaveAccount = { id, name, openingBal, isPrimary, accNum ->
                                 viewModel.saveAccount(id, name, openingBal, isPrimary, accNum)
                             },
@@ -390,55 +325,6 @@ fun ExpenseTrackerApp(
                             onAssignUnassignedTransactions = { accId -> viewModel.assignUnassignedTransactionsToAccount(accId) },
                             onAssignSelectedUnassigned = { transactionIds, accountId ->
                                 viewModel.assignUnassignedTransactionIdsToAccount(transactionIds, accountId)
-                            },
-                            onAddReconciliationExpense = { account, amountPaise, timestamp ->
-                                val candidate = com.example.expensetracker.model.MissingTransactionCandidateFinder.findCandidate(
-                                    targetAmountPaise = amountPaise,
-                                    observationTimestampMs = timestamp,
-                                    accountSuffix = account.accountNumber,
-                                    testNotifications = testNotifications,
-                                    existingReferenceNumbers = transactions.mapNotNull { it.referenceNumber }.toSet()
-                                )
-                                reconciliationSuggestedTransaction = if (candidate != null) {
-                                    Transaction(
-                                        id = java.util.UUID.randomUUID().toString(),
-                                        title = candidate.merchant?.takeIf { it.isNotBlank() } ?: "Missing expense",
-                                        amount = candidate.amount,
-                                        type = TransactionType.EXPENSE,
-                                        category = TransactionCategory.OTHER,
-                                        date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(candidate.timestamp)),
-                                        source = TransactionSource.NOTIFICATION,
-                                        timestamp = candidate.timestamp,
-                                        accountId = account.id,
-                                        referenceNumber = candidate.referenceNumber
-                                    )
-                                } else {
-                                    // No captured evidence identifies this transaction: let the user enter it manually
-                                    // instead of inventing a merchant/date from the discrepancy alone.
-                                    Transaction(
-                                        id = java.util.UUID.randomUUID().toString(),
-                                        title = "",
-                                        amount = amountPaise / 100.0,
-                                        type = TransactionType.EXPENSE,
-                                        category = TransactionCategory.OTHER,
-                                        date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(timestamp)),
-                                        source = TransactionSource.MANUAL,
-                                        timestamp = timestamp,
-                                        accountId = account.id
-                                    )
-                                }
-                            },
-                            onReviewReconciliationTransactions = { accountId ->
-                                viewModel.selectAccount(accountId)
-                                currentScreen = Screen.Transactions
-                            },
-                            unresolvedObservations = unresolvedObservations,
-                            reconciliationResults = reconciliationResults,
-                            onResolveObservation = { obsId, accId, rememberMapping ->
-                                viewModel.resolveObservation(obsId, accId, rememberMapping)
-                            },
-                            onDeleteObservation = { obsId ->
-                                viewModel.deleteObservation(obsId)
                             },
                             totalTransactionCount = transactions.size,
                             backupExportState = backupExportState,
@@ -484,28 +370,10 @@ fun ExpenseTrackerApp(
             )
         }
 
-        reconciliationSuggestedTransaction?.let { suggested ->
-            com.example.expensetracker.ui.components.AddOrEditTransactionBottomSheet(
-                initialTransaction = suggested,
-                availableCategories = categories.map { it.name },
-                accounts = accounts.filter { !it.isArchived },
-                defaultAccountId = suggested.accountId,
-                onDismiss = { reconciliationSuggestedTransaction = null },
-                onSave = { transaction ->
-                    viewModel.addTransaction(transaction)
-                    reconciliationSuggestedTransaction = null
-                }
-            )
-        }
-
         // Edit Transaction Sheet
         editingTransaction?.let { transaction ->
             com.example.expensetracker.ui.components.AddOrEditTransactionBottomSheet(
                 initialTransaction = transaction,
-                isSplitExpense = expenseSplits.any { it.split.transactionId == transaction.id },
-                onConvertSplitToRegular = {
-                    viewModel.convertSplitExpenseToRegular(transaction.id)
-                },
                 availableCategories = categories.map { it.name },
                 accounts = accounts,
                 defaultAccountId = primaryAccount?.id,
@@ -556,6 +424,7 @@ fun ExpenseTrackerApp(
         selectedDetailTransaction?.let { transaction ->
             com.example.expensetracker.ui.components.TransactionDetailBottomSheet(
                 transaction = transaction,
+                editLogs = transactionEditLogs.filter { it.transactionId == transaction.id },
                 onDismiss = { selectedDetailTransaction = null },
                 onEdit = { tx ->
                     selectedDetailTransaction = null
