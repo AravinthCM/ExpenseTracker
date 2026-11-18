@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 import com.example.expensetracker.data.local.RecurringExpenseEntity
 import com.example.expensetracker.service.DetectedRecurringCandidate
@@ -37,6 +38,8 @@ import com.example.expensetracker.service.RecurringExpenseDetector
 import com.example.expensetracker.service.TransactionNotificationHelper
 import com.example.expensetracker.service.CategoryMapper
 import com.example.expensetracker.data.preferences.BalancePrivacyPreferences
+import com.example.expensetracker.data.cloud.SyncScheduler
+import com.example.expensetracker.data.cloud.WorkManagerSyncScheduler
 
 class TransactionViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -65,6 +68,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     private val gPayMemberMappingDao = db.gPayMemberMappingDao()
     private val transactionEditLogDao = db.transactionEditLogDao()
     private val balancePrivacyPreferences = BalancePrivacyPreferences(application)
+    private val syncScheduler: SyncScheduler = WorkManagerSyncScheduler(application)
 
     val accountsState: StateFlow<List<com.example.expensetracker.data.local.AccountEntity>> = accountDao.getAllAccounts()
         .stateIn(
@@ -282,6 +286,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             // If this is the only account, default it to primary
             accountDao.setPrimaryAccount(targetId)
         }
+        syncScheduler.scheduleSync()
         return@runBlocking null
     }
 
@@ -311,12 +316,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 )
                 sourceAccountMappingDao.insert(mapping)
             }
+            syncScheduler.scheduleSync()
         }
     }
 
     fun deleteObservation(observationId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             balanceObservationDao.deleteById(observationId)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -340,12 +347,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 updatedAt = System.currentTimeMillis()
             )
             sourceAccountMappingDao.insert(mapping)
+            syncScheduler.scheduleSync()
         }
     }
 
     fun deleteSourceAccountMapping(mappingId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             sourceAccountMappingDao.deleteById(mappingId)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -353,6 +362,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch(Dispatchers.IO) {
             if (accountDao.getAccountByIdSync(accountId)?.isArchived == false) {
                 accountDao.setPrimaryAccount(accountId)
+                syncScheduler.scheduleSync()
             }
         }
     }
@@ -362,6 +372,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             val account = accountDao.getAccountByIdSync(accountId) ?: return@launch
             if (isArchived && account.isPrimary) return@launch
             accountDao.setArchivedStatus(accountId, isArchived)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -376,6 +387,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 transactionDao.reassignTransactions(account.id, null)
                 accountDao.deleteAccountById(account.id)
             }
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -383,6 +395,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch(Dispatchers.IO) {
             if (accountDao.getAccountByIdSync(accountId)?.isArchived == false) {
                 transactionDao.assignUnassignedTransactionsToAccount(accountId)
+                syncScheduler.scheduleSync()
             }
         }
     }
@@ -391,6 +404,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch(Dispatchers.IO) {
             if (accountDao.getAccountByIdSync(accountId)?.isArchived == false && transactionIds.isNotEmpty()) {
                 transactionDao.assignUnassignedTransactionIdsToAccount(transactionIds, accountId)
+                syncScheduler.scheduleSync()
             }
         }
     }
@@ -398,6 +412,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun reassignTransactions(fromAccountId: String, toAccountId: String?) {
         viewModelScope.launch(Dispatchers.IO) {
             transactionDao.reassignTransactions(fromAccountId, toAccountId)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -412,6 +427,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 transaction
             }
             transactionDao.insertTransaction(finalTx.toEntity())
+            syncScheduler.scheduleSync()
 
             // Trigger success notification ONLY after Room insert succeeds
             TransactionNotificationHelper.showTransactionAddedNotification(
@@ -440,6 +456,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 updated = transaction.toEntity(),
                 editSource = "MANUAL_EDIT"
             )
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -530,6 +547,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         db.runInTransaction {
             expenseSplitDao.deleteSplitById(split.split.id)
         }
+        syncScheduler.scheduleSync()
         return@runBlocking null
     }
 
@@ -538,6 +556,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             val escapedPattern = Regex.escape(updated.title.trim())
             if (!CategoryMapper.isValidRegex("(?i)$escapedPattern")) {
                 updateTransactionWithAudit(updated.toEntity(), "MANUAL_EDIT")
+                syncScheduler.scheduleSync()
                 return@launch
             }
             db.runInTransaction {
@@ -581,12 +600,14 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     categoryMappingDao.updateMapping(existing.copy(categoryName = updated.displayCategoryName))
                 }
             }
+            syncScheduler.scheduleSync()
         }
     }
 
     fun deleteTransaction(transaction: Transaction) {
         viewModelScope.launch(Dispatchers.IO) {
             transactionDao.deleteTransactionById(transaction.id)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -605,6 +626,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 dismissed = false
             )
             recurringExpenseDao.insertRecurringExpense(entity)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -622,6 +644,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 dismissed = true
             )
             recurringExpenseDao.insertRecurringExpense(entity)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -635,6 +658,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             categoryDao.insertCategory(
                 CategoryEntity(id = UUID.randomUUID().toString(), name = trimmed)
             )
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -645,6 +669,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             transactionDao.updateCategoryForTransactions(oldCategory = category.name, newCategory = trimmed)
             categoryMappingDao.updateCategoryForMappings(oldCategory = category.name, newCategory = trimmed)
             categoryDao.updateCategory(category.copy(name = trimmed))
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -656,6 +681,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 categoryMappingDao.updateCategoryForMappings(oldCategory = category.name, newCategory = "Other")
             }
             categoryDao.deleteCategoryById(category.id)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -672,18 +698,21 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     priority = priority
                 )
             )
+            syncScheduler.scheduleSync()
         }
     }
 
     fun updateCategoryMapping(mapping: CategoryMappingEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             categoryMappingDao.updateMapping(mapping)
+            syncScheduler.scheduleSync()
         }
     }
 
     fun deleteCategoryMapping(mapping: CategoryMappingEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             categoryMappingDao.deleteMapping(mapping)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -706,24 +735,28 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 updatedAt = now
             )
             paymentTemplateRepository.insert(entity)
+            syncScheduler.scheduleSync()
         }
     }
 
     fun updatePaymentTemplate(template: com.example.expensetracker.data.local.PaymentTemplateEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             paymentTemplateRepository.update(template.copy(updatedAt = System.currentTimeMillis()))
+            syncScheduler.scheduleSync()
         }
     }
 
     fun togglePaymentTemplateEnabled(template: com.example.expensetracker.data.local.PaymentTemplateEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             paymentTemplateRepository.update(template.copy(enabled = !template.enabled, updatedAt = System.currentTimeMillis()))
+            syncScheduler.scheduleSync()
         }
     }
 
     fun deletePaymentTemplate(template: com.example.expensetracker.data.local.PaymentTemplateEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             paymentTemplateRepository.delete(template)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -762,6 +795,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
         viewModelScope.launch(Dispatchers.IO) {
             splitGroupDao.saveGroupWithMembers(groupEntity, memberEntities)
+            syncScheduler.scheduleSync()
         }
 
         return validation
@@ -770,6 +804,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun deleteSplitGroup(group: com.example.expensetracker.data.local.SplitGroupEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             splitGroupDao.deleteGroup(group)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -792,6 +827,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         val result = com.example.expensetracker.model.ExpenseSplitCalculator.calculateEqualSplit(transaction, group)
         if (result is com.example.expensetracker.model.SplitCalculationResult.Success) {
             expenseSplitDao.saveSplitWithShares(result.split, result.shares)
+            syncScheduler.scheduleSync()
         }
         return@runBlocking result
     }
@@ -815,6 +851,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         val result = com.example.expensetracker.model.ExpenseSplitCalculator.calculateCustomSplit(transaction, group, customSharesPaise)
         if (result is com.example.expensetracker.model.SplitCalculationResult.Success) {
             expenseSplitDao.saveSplitWithShares(result.split, result.shares)
+            syncScheduler.scheduleSync()
         }
         return@runBlocking result
     }
@@ -822,6 +859,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun deleteExpenseSplit(splitId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             expenseSplitDao.deleteSplitById(splitId)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -834,6 +872,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         db.runInTransaction {
             expenseSplitDao.deleteSplitById(split.split.id)
         }
+        syncScheduler.scheduleSync()
         null
     }
 
@@ -846,6 +885,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         db.runInTransaction {
             splits.forEach { expenseSplitDao.deleteSplitById(it.split.id) }
         }
+        if (splits.isNotEmpty()) syncScheduler.scheduleSync()
         null
     }
 
@@ -877,6 +917,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
         if (result is com.example.expensetracker.model.RepaymentRecordResult.Success) {
             repaymentDao.saveRepaymentWithAllocations(result.repayment, result.allocations)
+            syncScheduler.scheduleSync()
         }
 
         return@runBlocking result
@@ -885,6 +926,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun deleteRepayment(repaymentId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repaymentDao.deleteRepaymentById(repaymentId)
+            syncScheduler.scheduleSync()
         }
     }
 
@@ -1009,6 +1051,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                         )
                     )
                 }
+                syncScheduler.scheduleSync()
                 null
             }
             is com.example.expensetracker.model.GPayExpenseCreationResult.Error -> result.message
@@ -1087,6 +1130,7 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 )
             )
         }
+        syncScheduler.scheduleSync()
         null
     }
 
@@ -1217,6 +1261,29 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun loadAndValidateBackupJson(json: String) {
+        viewModelScope.launch {
+            _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Validating
+            try {
+                val backup = withContext(Dispatchers.IO) {
+                    com.example.expensetracker.data.backup.BackupJsonSerializer.deserialize(json.removePrefix("\uFEFF").trim())
+                }
+                val summary = backupManager.validateAndPreview(backup)
+                if (com.example.expensetracker.BuildConfig.DEBUG) {
+                    android.util.Log.d("BackupImport", "Cloud backup JSON parsed and validated for preview")
+                }
+                _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.PreviewReady(summary)
+            } catch (e: Exception) {
+                if (com.example.expensetracker.BuildConfig.DEBUG) {
+                    android.util.Log.e("BackupImport", "Cloud backup JSON parsing/validation failed", e)
+                }
+                _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Error(
+                    "Could not parse the cloud backup JSON: ${e.localizedMessage ?: "invalid backup format"}"
+                )
+            }
+        }
+    }
+
     fun confirmImport(mode: com.example.expensetracker.data.backup.ImportMode) {
         val currentState = _backupImportState.value
         if (currentState !is com.example.expensetracker.data.backup.BackupImportState.PreviewReady) return
@@ -1228,6 +1295,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                 val result = backupManager.importBackup(backup, mode, getApplication())
                 if (result.isSuccess) {
                     val importRes = result.getOrThrow()
+                    if (com.example.expensetracker.BuildConfig.DEBUG) {
+                        android.util.Log.d("BackupImport", "Restore transaction completed: ${importRes.transactionsImported} transactions, ${importRes.accountsImported} accounts, ${importRes.categoriesImported} categories")
+                    }
                     val msg = when (mode) {
                         com.example.expensetracker.data.backup.ImportMode.RESTORE_REPLACE ->
                             "Database restored successfully (${importRes.transactionsImported} transactions, ${importRes.accountsImported} accounts)."
@@ -1236,11 +1306,17 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
                     }
                     _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Success(importRes, msg)
                 } else {
+                    if (com.example.expensetracker.BuildConfig.DEBUG) {
+                        android.util.Log.e("BackupImport", "Restore importer failed", result.exceptionOrNull())
+                    }
                     _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Error(
                         result.exceptionOrNull()?.localizedMessage ?: "Failed to perform import"
                     )
                 }
             } catch (e: Exception) {
+                if (com.example.expensetracker.BuildConfig.DEBUG) {
+                    android.util.Log.e("BackupImport", "Restore importer threw an exception", e)
+                }
                 _backupImportState.value = com.example.expensetracker.data.backup.BackupImportState.Error(
                     e.localizedMessage ?: "Error during import operation"
                 )

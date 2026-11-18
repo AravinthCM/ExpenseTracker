@@ -22,6 +22,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -104,6 +112,13 @@ fun AddOrEditTransactionBottomSheet(
     var titleError by remember { mutableStateOf<String?>(null) }
     var quickMathOriginalAmountText by remember { mutableStateOf<String?>(null) }
     var quickMathSummary by remember { mutableStateOf<String?>(null) }
+    val amountFocusRequester = remember { FocusRequester() }
+    val titleFocusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val amountInteractionSource = remember { MutableInteractionSource() }
+    val titleInteractionSource = remember { MutableInteractionSource() }
+    val amountFocused by amountInteractionSource.collectIsFocusedAsState()
+    val titleFocused by titleInteractionSource.collectIsFocusedAsState()
 
     fun applyQuickAmountAction(label: String, transform: (Double) -> Double) {
         val current = amountText.toDoubleOrNull() ?: return
@@ -225,14 +240,22 @@ fun AddOrEditTransactionBottomSheet(
             Text(
                 text = "Amount",
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
-                color = appColors.inkMuted
+                color = if (amountFocused) appColors.accent else appColors.inkMuted
             )
             Spacer(modifier = Modifier.height(6.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(appColors.bg, RoundedCornerShape(11.dp))
-                    .border(1.dp, if (amountError != null) appColors.negative else appColors.border, RoundedCornerShape(11.dp))
+                    .border(
+                        if (amountFocused) 1.5.dp else 1.dp,
+                        when {
+                            amountError != null -> appColors.negative
+                            amountFocused -> appColors.accent
+                            else -> appColors.border
+                        },
+                        RoundedCornerShape(11.dp)
+                    )
                     .padding(horizontal = 13.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -255,9 +278,20 @@ fun AddOrEditTransactionBottomSheet(
                         fontWeight = FontWeight.SemiBold,
                         color = appColors.ink
                     ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    cursorBrush = SolidColor(appColors.accent),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { titleFocusRequester.requestFocus() }),
+                    interactionSource = amountInteractionSource,
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().focusRequester(amountFocusRequester),
+                    decorationBox = { innerTextField ->
+                        Box {
+                            if (amountText.isEmpty()) {
+                                Text("0.00", color = appColors.inkFaint, fontSize = 15.sp)
+                            }
+                            innerTextField()
+                        }
+                    }
                 )
             }
             amountError?.let {
@@ -337,14 +371,22 @@ fun AddOrEditTransactionBottomSheet(
             Text(
                 text = "Merchant / description",
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
-                color = appColors.inkMuted
+                color = if (titleFocused) appColors.accent else appColors.inkMuted
             )
             Spacer(modifier = Modifier.height(6.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(appColors.bg, RoundedCornerShape(11.dp))
-                    .border(1.dp, if (titleError != null) appColors.negative else appColors.border, RoundedCornerShape(11.dp))
+                    .border(
+                        if (titleFocused) 1.5.dp else 1.dp,
+                        when {
+                            titleError != null -> appColors.negative
+                            titleFocused -> appColors.accent
+                            else -> appColors.border
+                        },
+                        RoundedCornerShape(11.dp)
+                    )
                     .padding(horizontal = 13.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -358,9 +400,20 @@ fun AddOrEditTransactionBottomSheet(
                         fontSize = 15.sp,
                         color = appColors.ink
                     ),
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                    cursorBrush = SolidColor(appColors.accent),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    interactionSource = titleInteractionSource,
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().focusRequester(titleFocusRequester),
+                    decorationBox = { innerTextField ->
+                        Box {
+                            if (titleText.isEmpty()) {
+                                Text("e.g. Coffee, groceries, or salary", color = appColors.inkFaint, fontSize = 15.sp)
+                            }
+                            innerTextField()
+                        }
+                    }
                 )
             }
             titleError?.let {

@@ -1,6 +1,5 @@
-
 package com.example.expensetracker.ui
- 
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
@@ -36,13 +35,12 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,11 +66,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.expensetracker.data.local.CategoryEntity
-import com.example.expensetracker.data.preferences.GoogleAccountInfo
 import com.example.expensetracker.data.local.CategoryMappingEntity
 import com.example.expensetracker.data.local.GPayRequestEntity
+import com.example.expensetracker.data.preferences.CloudSyncState
+import com.example.expensetracker.data.preferences.GoogleAccountInfo
 import com.example.expensetracker.model.GPayProcessingStatus
 import com.example.expensetracker.service.CategoryMapper
+import com.example.expensetracker.ui.components.CloudBackupSection
 import com.example.expensetracker.ui.components.ManageEmptyState
 import com.example.expensetracker.ui.components.ManageMenuAction
 import com.example.expensetracker.ui.components.ManageOverflowMenu
@@ -81,9 +81,9 @@ import com.example.expensetracker.ui.components.ManageSurface
 import com.example.expensetracker.ui.components.getCategoryIconAndColor
 import com.example.expensetracker.ui.theme.LocalAppColors
 import com.example.expensetracker.ui.util.CurrencyFormatter
- 
+
 // ───────────────────────── Navigation model ─────────────────────────
- 
+
 private enum class ManagePage(val title: String) {
     ACCOUNTS("Accounts"),
     CATEGORIES("Categories"),
@@ -92,7 +92,7 @@ private enum class ManagePage(val title: String) {
     GPAY_REQUESTS("GPay requests"),
     BACKUP("Backup & restore")
 }
- 
+
 /** Maps the old tab indexes (used by callers / deep links) to pages. -1 (or anything else) = hub. */
 private fun pageForIndex(index: Int): ManagePage? = when (index) {
     0 -> ManagePage.CATEGORIES
@@ -103,18 +103,18 @@ private fun pageForIndex(index: Int): ManagePage? = when (index) {
     5 -> ManagePage.GPAY_REQUESTS
     else -> null
 }
- 
+
 private data class HubItem(
     val page: ManagePage,
     val icon: ImageVector,
     val title: String,
     val subtitle: String
 )
- 
+
 private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
- 
+
 // ───────────────────────── Screen ─────────────────────────
- 
+
 @Composable
 fun ManagementScreen(
     categories: List<CategoryEntity>,
@@ -123,7 +123,7 @@ fun ManagementScreen(
     accountsWithBalances: List<com.example.expensetracker.model.AccountWithBalance> = emptyList(),
     transactions: List<com.example.expensetracker.model.Transaction> = emptyList(),
     unassignedTransactionCount: Int = 0,
-    initialSelectedTab: Int = -1, // -1 = show the Manage hub. 0..4 open that section directly.
+    initialSelectedTab: Int = -1, // -1 = show the Manage hub. 0..5 open that section directly.
     initialSampleForTemplate: String? = null,
     onAddCategory: (String) -> Unit,
     onUpdateCategory: (CategoryEntity, String) -> Unit,
@@ -161,9 +161,17 @@ fun ManagementScreen(
     onGoogleDisconnect: () -> Unit = {},
     onDismissGoogleError: () -> Unit = {},
     cloudBackupEnabled: Boolean = false,
+    lastCloudBackupModifiedTime: String? = null,
+    cloudSyncState: CloudSyncState = CloudSyncState.IDLE,
+    lastSyncedTimestamp: Long? = null,
+    lastSyncError: String? = null,
+    cloudSyncing: Boolean = false,
     driveAuthorizationLoading: Boolean = false,
     driveAuthorizationMessage: String? = null,
     onEnableCloudBackup: () -> Unit = {},
+    onRetryCloudBackup: () -> Unit = {},
+    onBackUpNow: () -> Unit = {},
+    onRestoreFromDrive: () -> Unit = {},
     onDisableCloudBackup: () -> Unit = {},
     onDismissDriveMessage: () -> Unit = {},
     onNavigateBack: () -> Unit
@@ -174,26 +182,26 @@ fun ManagementScreen(
             else pageForIndex(initialSelectedTab)
         )
     }
- 
+
     // System back from a section returns to the hub; from the hub it behaves as before.
     BackHandler(enabled = page != null) { page = null }
- 
+
     // Dialog states
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
     var deletingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
- 
+
     var showAddMappingDialog by remember { mutableStateOf(false) }
     var editingMapping by remember { mutableStateOf<CategoryMappingEntity?>(null) }
     var deletingMapping by remember { mutableStateOf<CategoryMappingEntity?>(null) }
- 
+
     var showAddTemplateDialog by remember(initialSampleForTemplate) { mutableStateOf(!initialSampleForTemplate.isNullOrBlank()) }
     var editingTemplate by remember { mutableStateOf<com.example.expensetracker.data.local.PaymentTemplateEntity?>(null) }
     var testingTemplate by remember { mutableStateOf<com.example.expensetracker.data.local.PaymentTemplateEntity?>(null) }
- 
+
     var showAddAccountDialog by remember { mutableStateOf(false) }
     var editingAccount by remember { mutableStateOf<com.example.expensetracker.data.local.AccountEntity?>(null) }
- 
+
     // ── Derived summaries for the hub ──
     val activeAccounts = remember(accountsWithBalances) { accountsWithBalances.filter { !it.account.isArchived } }
     val totalBalance = remember(activeAccounts) { activeAccounts.sumOf { it.currentBalanceDouble } }
@@ -203,7 +211,7 @@ fun ManagementScreen(
     val pendingGPayRequests = remember(gPayRequests) {
         gPayRequests.filter { it.processingStatus == GPayProcessingStatus.PENDING }
     }
- 
+
     val hubGroups = listOf(
         "MONEY" to listOf(
             HubItem(
@@ -240,7 +248,7 @@ fun ManagementScreen(
             )
         )
     )
- 
+
     Box(modifier = Modifier.fillMaxSize()) {
         Crossfade(targetState = page, label = "managePage") { current ->
             if (current == null) {
@@ -255,30 +263,41 @@ fun ManagementScreen(
                     onGoogleDisconnect = onGoogleDisconnect,
                     onDismissGoogleError = onDismissGoogleError,
                     cloudBackupEnabled = cloudBackupEnabled,
+                    lastCloudBackupModifiedTime = lastCloudBackupModifiedTime,
+                    cloudSyncState = cloudSyncState,
+                    lastSyncedTimestamp = lastSyncedTimestamp,
+                    lastSyncError = lastSyncError,
+                    cloudSyncing = cloudSyncing,
                     driveAuthorizationLoading = driveAuthorizationLoading,
                     driveAuthorizationMessage = driveAuthorizationMessage,
                     onEnableCloudBackup = onEnableCloudBackup,
+                    onRetryCloudBackup = onRetryCloudBackup,
+                    onBackUpNow = onBackUpNow,
+                    onRestoreFromDrive = onRestoreFromDrive,
                     onDisableCloudBackup = onDisableCloudBackup,
                     onDismissDriveMessage = onDismissDriveMessage
                 )
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    val (subtitle, addAction) = when (current) {
-                        ManagePage.ACCOUNTS -> plural(accountsWithBalances.size, "account") to { showAddAccountDialog = true }
-                        ManagePage.CATEGORIES -> plural(categories.size, "category", "categories") to { showAddCategoryDialog = true }
-                        ManagePage.RULES -> plural(mappings.size, "rule") to { showAddMappingDialog = true }
-                        ManagePage.TEMPLATES -> "${paymentTemplates.count { it.enabled }} of ${paymentTemplates.size} active" to { showAddTemplateDialog = true }
-                        ManagePage.GPAY_REQUESTS -> plural(pendingGPayRequests.size, "pending request") to null
-                        ManagePage.BACKUP -> null to null
+                    val header: Pair<String?, (() -> Unit)?> = when (current) {
+                        ManagePage.ACCOUNTS -> Pair(plural(accountsWithBalances.size, "account"), { showAddAccountDialog = true })
+                        ManagePage.CATEGORIES -> Pair(plural(categories.size, "category", "categories"), { showAddCategoryDialog = true })
+                        ManagePage.RULES -> Pair(plural(mappings.size, "rule"), { showAddMappingDialog = true })
+                        ManagePage.TEMPLATES -> Pair(
+                            "${paymentTemplates.count { it.enabled }} of ${paymentTemplates.size} active",
+                            { showAddTemplateDialog = true }
+                        )
+                        ManagePage.GPAY_REQUESTS -> Pair(plural(pendingGPayRequests.size, "pending request"), null)
+                        ManagePage.BACKUP -> Pair(null, null)
                     }
- 
+
                     PageHeader(
                         title = current.title,
-                        subtitle = subtitle,
+                        subtitle = header.first,
                         onBack = { page = null },
-                        onAdd = addAction
+                        onAdd = header.second
                     )
- 
+
                     when (current) {
                         ManagePage.CATEGORIES -> CategoriesPage(
                             categories = categories,
@@ -340,7 +359,7 @@ fun ManagementScreen(
             }
         }
     }
- 
+
     // ── Account dialog ──
     if (showAddAccountDialog || editingAccount != null) {
         val editingCurrentBalancePaise = editingAccount?.let { acc ->
@@ -356,7 +375,7 @@ fun ManagementScreen(
             onSave = onSaveAccount
         )
     }
- 
+
     // ── Template dialogs ──
     if (showAddTemplateDialog) {
         com.example.expensetracker.ui.components.AddOrEditTemplateDialog(
@@ -370,7 +389,7 @@ fun ManagementScreen(
             }
         )
     }
- 
+
     editingTemplate?.let { template ->
         com.example.expensetracker.ui.components.AddOrEditTemplateDialog(
             title = "Edit Payment Template",
@@ -389,14 +408,14 @@ fun ManagementScreen(
             }
         )
     }
- 
+
     testingTemplate?.let { template ->
         com.example.expensetracker.ui.components.TestTemplateDialog(
             template = template,
             onDismiss = { testingTemplate = null }
         )
     }
- 
+
     // ── Category dialogs ──
     if (showAddCategoryDialog) {
         AddOrEditCategoryDialog(
@@ -409,7 +428,7 @@ fun ManagementScreen(
             }
         )
     }
- 
+
     editingCategory?.let { category ->
         AddOrEditCategoryDialog(
             title = "Edit Category",
@@ -421,7 +440,7 @@ fun ManagementScreen(
             }
         )
     }
- 
+
     deletingCategory?.let { category ->
         AlertDialog(
             onDismissRequest = { deletingCategory = null },
@@ -436,7 +455,7 @@ fun ManagementScreen(
             dismissButton = { TextButton(onClick = { deletingCategory = null }) { Text("Cancel") } }
         )
     }
- 
+
     // ── Rule dialogs ──
     if (showAddMappingDialog) {
         AddOrEditMappingDialog(
@@ -452,7 +471,7 @@ fun ManagementScreen(
             }
         )
     }
- 
+
     editingMapping?.let { mapping ->
         AddOrEditMappingDialog(
             title = "Edit Mapping Rule",
@@ -467,7 +486,7 @@ fun ManagementScreen(
             }
         )
     }
- 
+
     deletingMapping?.let { mapping ->
         AlertDialog(
             onDismissRequest = { deletingMapping = null },
@@ -483,6 +502,8 @@ fun ManagementScreen(
         )
     }
 }
+
+// ───────────────────────── GPay requests ─────────────────────────
 
 @Composable
 private fun GPayRequestsSimplePage(
@@ -719,9 +740,9 @@ private fun MapRequestToExpenseDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
- 
+
 // ───────────────────────── Hub ─────────────────────────
- 
+
 @Composable
 private fun ManageHub(
     unassignedCount: Int,
@@ -734,19 +755,27 @@ private fun ManageHub(
     onGoogleDisconnect: () -> Unit,
     onDismissGoogleError: () -> Unit,
     cloudBackupEnabled: Boolean,
+    lastCloudBackupModifiedTime: String?,
+    cloudSyncState: CloudSyncState,
+    lastSyncedTimestamp: Long?,
+    lastSyncError: String?,
+    cloudSyncing: Boolean,
     driveAuthorizationLoading: Boolean,
     driveAuthorizationMessage: String?,
     onEnableCloudBackup: () -> Unit,
+    onRetryCloudBackup: () -> Unit,
+    onBackUpNow: () -> Unit,
+    onRestoreFromDrive: () -> Unit,
     onDisableCloudBackup: () -> Unit,
     onDismissDriveMessage: () -> Unit
 ) {
     val appColors = LocalAppColors.current
- 
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         // Only surface what needs action
@@ -778,7 +807,7 @@ private fun ManageHub(
                 }
             }
         }
- 
+
         groups.forEach { (label, items) ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -806,54 +835,43 @@ private fun ManageHub(
             }
         }
 
+        // ── Cloud backup ──
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("GOOGLE ACCOUNT", style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp
-            ), color = appColors.inkFaint, modifier = Modifier.padding(start = 4.dp))
-            ManageSurface {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (googleAccount == null) {
-                        Text("Connect your Google account", fontWeight = FontWeight.SemiBold, color = appColors.ink)
-                        Button(onClick = onGoogleSignIn, enabled = !googleAccountLoading) {
-                            if (googleAccountLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            else Text("Continue with Google")
-                        }
-                    } else {
-                        Text(googleAccount.displayName, fontWeight = FontWeight.SemiBold, color = appColors.ink)
-                        Text(googleAccount.email, color = appColors.inkMuted)
-                        Text(
-                            if (cloudBackupEnabled) "Cloud backup authorization enabled" else "Cloud backup is off",
-                            color = appColors.inkMuted
-                        )
-                        Button(
-                            onClick = onEnableCloudBackup,
-                            enabled = !driveAuthorizationLoading
-                        ) {
-                            if (driveAuthorizationLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            else Text(if (cloudBackupEnabled) "Reauthorize Cloud Backup" else "Enable Cloud Backup")
-                        }
-                        if (cloudBackupEnabled) {
-                            TextButton(onClick = onDisableCloudBackup) { Text("Turn off Cloud Backup") }
-                        }
-                        TextButton(onClick = onGoogleDisconnect, enabled = !googleAccountLoading) {
-                            if (googleAccountLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            else Text("Disconnect")
-                        }
-                    }
-                    if (googleAccountError != null) {
-                        Text(googleAccountError, color = MaterialTheme.colorScheme.error)
-                        TextButton(onClick = onDismissGoogleError) { Text("Dismiss") }
-                    }
-                    if (driveAuthorizationMessage != null) {
-                        Text(driveAuthorizationMessage, color = if (driveAuthorizationMessage.startsWith("Cloud backup authorization denied")) appColors.inkMuted else MaterialTheme.colorScheme.error)
-                        TextButton(onClick = onDismissDriveMessage) { Text("Dismiss") }
-                    }
-                }
-            }
+            Text(
+                "CLOUD BACKUP",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp
+                ),
+                color = appColors.inkFaint,
+                modifier = Modifier.padding(start = 4.dp)
+            )
+            CloudBackupSection(
+                googleAccount = googleAccount,
+                googleAccountLoading = googleAccountLoading,
+                googleAccountError = googleAccountError,
+                onGoogleSignIn = onGoogleSignIn,
+                onGoogleDisconnect = onGoogleDisconnect,
+                onDismissGoogleError = onDismissGoogleError,
+                cloudBackupEnabled = cloudBackupEnabled,
+                lastCloudBackupModifiedTime = lastCloudBackupModifiedTime,
+                cloudSyncState = cloudSyncState,
+                lastSyncedTimestamp = lastSyncedTimestamp,
+                lastSyncError = lastSyncError,
+                cloudSyncing = cloudSyncing,
+                driveAuthorizationLoading = driveAuthorizationLoading,
+                driveAuthorizationMessage = driveAuthorizationMessage,
+                onEnableCloudBackup = onEnableCloudBackup,
+                onRetryCloudBackup = onRetryCloudBackup,
+                onBackUpNow = onBackUpNow,
+                onRestoreFromDrive = onRestoreFromDrive,
+                onDisableCloudBackup = onDisableCloudBackup,
+                onDismissDriveMessage = onDismissDriveMessage
+            )
         }
     }
 }
- 
+
 @Composable
 private fun HubRow(item: HubItem, onClick: () -> Unit) {
     val appColors = LocalAppColors.current
@@ -886,9 +904,9 @@ private fun HubRow(item: HubItem, onClick: () -> Unit) {
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = appColors.inkFaint)
     }
 }
- 
+
 // ───────────────────────── Detail header ─────────────────────────
- 
+
 @Composable
 private fun PageHeader(
     title: String,
@@ -932,9 +950,9 @@ private fun PageHeader(
         }
     }
 }
- 
+
 // ───────────────────────── Categories ─────────────────────────
- 
+
 @Composable
 private fun CategoriesPage(
     categories: List<CategoryEntity>,
@@ -944,7 +962,7 @@ private fun CategoriesPage(
     onDelete: (CategoryEntity) -> Unit
 ) {
     val appColors = LocalAppColors.current
- 
+
     if (categories.isEmpty()) {
         ManageEmptyState(
             title = "No categories yet",
@@ -954,7 +972,7 @@ private fun CategoriesPage(
         )
         return
     }
- 
+
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -968,7 +986,7 @@ private fun CategoriesPage(
             }
             val (_, catColor, catSoftBg) = getCategoryIconAndColor(categoryEnum, appColors.isDark)
             val count = usage[category.name.lowercase()] ?: 0
- 
+
             ManageSurface(onClick = { onEdit(category) }) {
                 Row(
                     modifier = Modifier
@@ -1016,9 +1034,9 @@ private fun CategoriesPage(
         }
     }
 }
- 
+
 // ───────────────────────── Rules ─────────────────────────
- 
+
 @Composable
 private fun RulesPage(
     mappings: List<CategoryMappingEntity>,
@@ -1027,7 +1045,7 @@ private fun RulesPage(
     onDelete: (CategoryMappingEntity) -> Unit
 ) {
     val appColors = LocalAppColors.current
- 
+
     if (mappings.isEmpty()) {
         ManageEmptyState(
             title = "No rules yet",
@@ -1037,9 +1055,9 @@ private fun RulesPage(
         )
         return
     }
- 
+
     val sorted = remember(mappings) { mappings.sortedBy { it.priority } }
- 
+
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1103,9 +1121,9 @@ private fun RulesPage(
         }
     }
 }
- 
+
 // ───────────────────────── Dialogs (unchanged behavior) ─────────────────────────
- 
+
 @Composable
 private fun AddOrEditCategoryDialog(
     title: String,
@@ -1114,7 +1132,7 @@ private fun AddOrEditCategoryDialog(
     onSave: (String) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
- 
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -1133,7 +1151,7 @@ private fun AddOrEditCategoryDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
- 
+
 @Composable
 private fun AddOrEditMappingDialog(
     title: String,
@@ -1148,10 +1166,10 @@ private fun AddOrEditMappingDialog(
     var selectedCategory by remember { mutableStateOf(initialCategory) }
     var priorityText by remember { mutableStateOf(initialPriority.toString()) }
     var dropdownExpanded by remember { mutableStateOf(false) }
- 
+
     val isRegexValid = CategoryMapper.isValidRegex(pattern)
     val showError = pattern.isNotBlank() && !isRegexValid
- 
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -1170,9 +1188,9 @@ private fun AddOrEditMappingDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
- 
+
                 Spacer(modifier = Modifier.height(8.dp))
- 
+
                 Text("Mapped Category:")
                 Spacer(modifier = Modifier.height(4.dp))
                 Box(
@@ -1208,9 +1226,9 @@ private fun AddOrEditMappingDialog(
                         }
                     }
                 }
- 
+
                 Spacer(modifier = Modifier.height(8.dp))
- 
+
                 OutlinedTextField(
                     value = priorityText,
                     onValueChange = { priorityText = it },

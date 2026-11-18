@@ -9,12 +9,11 @@ import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
-import com.google.android.gms.common.api.Status
-import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.tasks.Tasks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 /** Handles Drive app-data authorization independently of Google account sign-in. */
 class DriveAuthorizationManager(context: Context) {
@@ -29,6 +28,9 @@ class DriveAuthorizationManager(context: Context) {
         data class Error(val message: String, val reauthorizationRequired: Boolean = false) : Result
     }
 
+    class ResolutionRequired(val pendingIntent: PendingIntent) : Exception("Google Drive authorization needs user approval.")
+    class ReauthorizationRequired(message: String) : SecurityException(message)
+
     private val client = Identity.getAuthorizationClient(context.applicationContext)
 
     suspend fun authorize(accountEmail: String): Result = withContext(Dispatchers.IO) {
@@ -41,6 +43,13 @@ class DriveAuthorizationManager(context: Context) {
         } catch (e: Exception) {
             mapException(e)
         }
+    }
+
+    suspend fun requireAccessToken(accountEmail: String): String = when (val result = authorize(accountEmail)) {
+        is Result.Authorized -> result.accessToken
+        is Result.NeedsResolution -> throw ResolutionRequired(result.pendingIntent)
+        Result.Denied -> throw ReauthorizationRequired("Google Drive access was denied. Please authorize cloud backup again.")
+        is Result.Error -> if (result.reauthorizationRequired) throw ReauthorizationRequired(result.message) else throw IOException(result.message)
     }
 
     fun authorizationFromIntent(data: Intent?): Result {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.expensetracker.data.local.AppDatabase
 import com.example.expensetracker.data.local.TransactionEntity
+import com.example.expensetracker.data.cloud.WorkManagerSyncScheduler
 import com.example.expensetracker.model.TransactionCategory
 import com.example.expensetracker.model.TransactionType
 import java.util.UUID
@@ -233,6 +234,8 @@ object TransactionDeduplicator {
                         confirmedSources = listOf(transaction.source)
                     )
                 }
+
+                context?.let { WorkManagerSyncScheduler(it).scheduleSync() }
 
                 Log.d(TAG, "ROOM_SAVE_RESULT: Saved entity ID=${entityToSave.id} Title='${entityToSave.title}' Amount=₹${entityToSave.amount} Source=${entityToSave.source} Ref=${entityToSave.referenceNumber}")
                 Log.d(

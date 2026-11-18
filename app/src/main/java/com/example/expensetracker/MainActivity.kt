@@ -157,7 +157,16 @@ fun ExpenseTrackerApp(
     var isDarkTheme by rememberSaveable { mutableStateOf(systemDark) }
 
     var currentScreen by rememberSaveable { mutableStateOf(Screen.Overview) }
+    var managementInitialTab by rememberSaveable { mutableStateOf(-1) }
     var sampleForTemplate by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(googleAccountViewModel, viewModel) {
+        googleAccountViewModel.restoreJson.collect { json ->
+            managementInitialTab = 4
+            currentScreen = Screen.Management
+            viewModel.loadAndValidateBackupJson(json)
+        }
+    }
 
     var showAddSheet by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
@@ -324,7 +333,7 @@ fun ExpenseTrackerApp(
                             accountsWithBalances = accountsWithBalances,
                             transactions = transactions,
                             unassignedTransactionCount = unassignedTransactionCount,
-                            initialSelectedTab = -1,
+                            initialSelectedTab = managementInitialTab,
                             initialSampleForTemplate = sampleForTemplate,
                             onAddCategory = { name -> viewModel.addCategory(name) },
                             onUpdateCategory = { cat, newName -> viewModel.updateCategory(cat, newName) },
@@ -375,13 +384,22 @@ fun ExpenseTrackerApp(
                             onGoogleDisconnect = { googleAccountViewModel.disconnect() },
                             onDismissGoogleError = { googleAccountViewModel.dismissError() },
                             cloudBackupEnabled = cloudBackupStatus.enabled && cloudBackupStatus.accountGoogleId == googleAccount?.googleId,
-                            driveAuthorizationLoading = driveUiState == GoogleAccountViewModel.DriveUiState.Loading || driveUiState is GoogleAccountViewModel.DriveUiState.NeedsResolution,
+                            lastCloudBackupModifiedTime = cloudBackupStatus.lastBackupModifiedTime,
+                            cloudSyncState = cloudBackupStatus.syncState,
+                            lastSyncedTimestamp = cloudBackupStatus.lastSyncedTimestamp,
+                            lastSyncError = cloudBackupStatus.lastSyncError,
+                            cloudSyncing = cloudBackupStatus.syncState == com.example.expensetracker.data.preferences.CloudSyncState.SYNCING,
+                            driveAuthorizationLoading = driveUiState is GoogleAccountViewModel.DriveUiState.Loading || driveUiState is GoogleAccountViewModel.DriveUiState.NeedsResolution,
                             driveAuthorizationMessage = when (driveUiState) {
                                 GoogleAccountViewModel.DriveUiState.Denied -> "Cloud backup authorization denied. You can enable it any time."
                                 is GoogleAccountViewModel.DriveUiState.Error -> (driveUiState as GoogleAccountViewModel.DriveUiState.Error).message
+                                is GoogleAccountViewModel.DriveUiState.Success -> (driveUiState as GoogleAccountViewModel.DriveUiState.Success).message
                                 else -> null
                             },
                             onEnableCloudBackup = { googleAccountViewModel.enableCloudBackup() },
+                            onRetryCloudBackup = { googleAccountViewModel.retryCloudBackup() },
+                            onBackUpNow = { googleAccountViewModel.backUpNow() },
+                            onRestoreFromDrive = { googleAccountViewModel.restoreFromDrive() },
                             onDisableCloudBackup = { googleAccountViewModel.disableCloudBackup() },
                             onDismissDriveMessage = { googleAccountViewModel.dismissDriveMessage() },
                             onNavigateBack = { currentScreen = Screen.Overview }

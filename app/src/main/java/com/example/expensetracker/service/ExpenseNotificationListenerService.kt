@@ -5,6 +5,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.example.expensetracker.data.local.AppDatabase
+import com.example.expensetracker.data.cloud.WorkManagerSyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -196,6 +197,7 @@ class ExpenseNotificationListenerService : NotificationListenerService() {
                                 isReconciled = false
                             )
                             db.balanceObservationDao().insert(observation)
+                            WorkManagerSyncScheduler(applicationContext).scheduleSync()
                             Log.d(TAG, "BALANCE_OBSERVATION_SAVED: id=${observation.id} accountId=$identifiedAccountId balance=₹$observedBalance resolved=${observation.isResolved}")
                         } else {
                             Log.d(TAG, "BALANCE_OBSERVATION_SKIPPED: Duplicate observation for ref=$ref / balance=₹$observedBalance")
