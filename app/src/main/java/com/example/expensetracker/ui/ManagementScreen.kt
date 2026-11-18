@@ -160,6 +160,12 @@ fun ManagementScreen(
     onGoogleSignIn: () -> Unit = {},
     onGoogleDisconnect: () -> Unit = {},
     onDismissGoogleError: () -> Unit = {},
+    cloudBackupEnabled: Boolean = false,
+    driveAuthorizationLoading: Boolean = false,
+    driveAuthorizationMessage: String? = null,
+    onEnableCloudBackup: () -> Unit = {},
+    onDisableCloudBackup: () -> Unit = {},
+    onDismissDriveMessage: () -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     var page by remember(initialSelectedTab, initialSampleForTemplate) {
@@ -247,7 +253,13 @@ fun ManagementScreen(
                     googleAccountError = googleAccountError,
                     onGoogleSignIn = onGoogleSignIn,
                     onGoogleDisconnect = onGoogleDisconnect,
-                    onDismissGoogleError = onDismissGoogleError
+                    onDismissGoogleError = onDismissGoogleError,
+                    cloudBackupEnabled = cloudBackupEnabled,
+                    driveAuthorizationLoading = driveAuthorizationLoading,
+                    driveAuthorizationMessage = driveAuthorizationMessage,
+                    onEnableCloudBackup = onEnableCloudBackup,
+                    onDisableCloudBackup = onDisableCloudBackup,
+                    onDismissDriveMessage = onDismissDriveMessage
                 )
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -720,7 +732,13 @@ private fun ManageHub(
     googleAccountError: String?,
     onGoogleSignIn: () -> Unit,
     onGoogleDisconnect: () -> Unit,
-    onDismissGoogleError: () -> Unit
+    onDismissGoogleError: () -> Unit,
+    cloudBackupEnabled: Boolean,
+    driveAuthorizationLoading: Boolean,
+    driveAuthorizationMessage: String?,
+    onEnableCloudBackup: () -> Unit,
+    onDisableCloudBackup: () -> Unit,
+    onDismissDriveMessage: () -> Unit
 ) {
     val appColors = LocalAppColors.current
  
@@ -803,6 +821,20 @@ private fun ManageHub(
                     } else {
                         Text(googleAccount.displayName, fontWeight = FontWeight.SemiBold, color = appColors.ink)
                         Text(googleAccount.email, color = appColors.inkMuted)
+                        Text(
+                            if (cloudBackupEnabled) "Cloud backup authorization enabled" else "Cloud backup is off",
+                            color = appColors.inkMuted
+                        )
+                        Button(
+                            onClick = onEnableCloudBackup,
+                            enabled = !driveAuthorizationLoading
+                        ) {
+                            if (driveAuthorizationLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Text(if (cloudBackupEnabled) "Reauthorize Cloud Backup" else "Enable Cloud Backup")
+                        }
+                        if (cloudBackupEnabled) {
+                            TextButton(onClick = onDisableCloudBackup) { Text("Turn off Cloud Backup") }
+                        }
                         TextButton(onClick = onGoogleDisconnect, enabled = !googleAccountLoading) {
                             if (googleAccountLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                             else Text("Disconnect")
@@ -811,6 +843,10 @@ private fun ManageHub(
                     if (googleAccountError != null) {
                         Text(googleAccountError, color = MaterialTheme.colorScheme.error)
                         TextButton(onClick = onDismissGoogleError) { Text("Dismiss") }
+                    }
+                    if (driveAuthorizationMessage != null) {
+                        Text(driveAuthorizationMessage, color = if (driveAuthorizationMessage.startsWith("Cloud backup authorization denied")) appColors.inkMuted else MaterialTheme.colorScheme.error)
+                        TextButton(onClick = onDismissDriveMessage) { Text("Dismiss") }
                     }
                 }
             }

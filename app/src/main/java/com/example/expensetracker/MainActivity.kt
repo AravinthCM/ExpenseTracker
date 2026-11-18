@@ -7,6 +7,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -40,6 +43,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -116,6 +120,19 @@ fun ExpenseTrackerApp(
     val activityContext = LocalContext.current
     val googleAccount by googleAccountViewModel.connectedAccount.collectAsState()
     val googleUiState by googleAccountViewModel.uiState.collectAsState()
+    val driveUiState by googleAccountViewModel.driveUiState.collectAsState()
+    val cloudBackupStatus by googleAccountViewModel.cloudBackupStatus.collectAsState()
+    val driveAuthorizationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        googleAccountViewModel.handleDriveAuthorizationResult(result.resultCode, result.data)
+    }
+    LaunchedEffect(driveUiState) {
+        val pendingIntent = (driveUiState as? GoogleAccountViewModel.DriveUiState.NeedsResolution)?.pendingIntent
+        if (pendingIntent != null) {
+            driveAuthorizationLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
+        }
+    }
     val transactions by viewModel.transactionsState.collectAsState()
     val categories by viewModel.categoriesState.collectAsState()
     val transactionEditLogs by viewModel.transactionEditLogsState.collectAsState()
@@ -357,6 +374,16 @@ fun ExpenseTrackerApp(
                             onGoogleSignIn = { googleAccountViewModel.signIn(activityContext) },
                             onGoogleDisconnect = { googleAccountViewModel.disconnect() },
                             onDismissGoogleError = { googleAccountViewModel.dismissError() },
+                            cloudBackupEnabled = cloudBackupStatus.enabled && cloudBackupStatus.accountGoogleId == googleAccount?.googleId,
+                            driveAuthorizationLoading = driveUiState == GoogleAccountViewModel.DriveUiState.Loading || driveUiState is GoogleAccountViewModel.DriveUiState.NeedsResolution,
+                            driveAuthorizationMessage = when (driveUiState) {
+                                GoogleAccountViewModel.DriveUiState.Denied -> "Cloud backup authorization denied. You can enable it any time."
+                                is GoogleAccountViewModel.DriveUiState.Error -> (driveUiState as GoogleAccountViewModel.DriveUiState.Error).message
+                                else -> null
+                            },
+                            onEnableCloudBackup = { googleAccountViewModel.enableCloudBackup() },
+                            onDisableCloudBackup = { googleAccountViewModel.disableCloudBackup() },
+                            onDismissDriveMessage = { googleAccountViewModel.dismissDriveMessage() },
                             onNavigateBack = { currentScreen = Screen.Overview }
                         )
                     }
