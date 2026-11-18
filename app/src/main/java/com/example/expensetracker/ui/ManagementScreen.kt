@@ -34,8 +34,14 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +51,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +68,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.expensetracker.data.local.CategoryEntity
 import com.example.expensetracker.data.local.CategoryMappingEntity
+import com.example.expensetracker.data.local.GPayRequestEntity
+import com.example.expensetracker.model.GPayProcessingStatus
 import com.example.expensetracker.service.CategoryMapper
 import com.example.expensetracker.ui.components.ManageEmptyState
 import com.example.expensetracker.ui.components.ManageMenuAction
@@ -78,6 +87,7 @@ private enum class ManagePage(val title: String) {
     CATEGORIES("Categories"),
     RULES("Category rules"),
     TEMPLATES("Payment templates"),
+    GPAY_REQUESTS("GPay requests"),
     BACKUP("Backup & restore")
 }
  
@@ -88,6 +98,7 @@ private fun pageForIndex(index: Int): ManagePage? = when (index) {
     2 -> ManagePage.TEMPLATES
     3 -> ManagePage.ACCOUNTS
     4 -> ManagePage.BACKUP
+    5 -> ManagePage.GPAY_REQUESTS
     else -> null
 }
  
@@ -128,6 +139,10 @@ fun ManagementScreen(
     onDeleteAccount: (com.example.expensetracker.data.local.AccountEntity) -> Unit = {},
     onAssignUnassignedTransactions: (accountId: String) -> Unit = {},
     onAssignSelectedUnassigned: (transactionIds: List<String>, accountId: String) -> Unit = { _, _ -> },
+    gPayRequests: List<GPayRequestEntity> = emptyList(),
+    onMapGPayRequestToExpense: (requestId: String, transactionId: String) -> String? = { _, _ -> null },
+    onCreateExpenseFromGPayRequest: (requestId: String) -> String? = { null },
+    onCreateExpensesFromGPayRequests: (requestIds: List<String>) -> String? = { null },
     totalTransactionCount: Int = 0,
     backupExportState: com.example.expensetracker.data.backup.BackupExportState = com.example.expensetracker.data.backup.BackupExportState.Idle,
     backupImportState: com.example.expensetracker.data.backup.BackupImportState = com.example.expensetracker.data.backup.BackupImportState.Idle,
@@ -171,6 +186,9 @@ fun ManagementScreen(
     val categoryUsage = remember(transactions) {
         transactions.groupingBy { it.displayCategoryName.lowercase() }.eachCount()
     }
+    val pendingGPayRequests = remember(gPayRequests) {
+        gPayRequests.filter { it.processingStatus == GPayProcessingStatus.PENDING }
+    }
  
     val hubGroups = listOf(
         "MONEY" to listOf(
@@ -194,6 +212,11 @@ fun ManagementScreen(
                 ManagePage.RULES, Icons.Default.Build, "Category rules",
                 if (mappings.isEmpty()) "Auto-assign categories by merchant text"
                 else plural(mappings.size, "rule")
+            ),
+            HubItem(
+                ManagePage.GPAY_REQUESTS, Icons.Default.Notifications, "GPay requests",
+                if (pendingGPayRequests.isEmpty()) "No pending requests"
+                else "${plural(pendingGPayRequests.size, "request")} pending"
             )
         ),
         "DATA" to listOf(
@@ -219,6 +242,7 @@ fun ManagementScreen(
                         ManagePage.CATEGORIES -> plural(categories.size, "category", "categories") to { showAddCategoryDialog = true }
                         ManagePage.RULES -> plural(mappings.size, "rule") to { showAddMappingDialog = true }
                         ManagePage.TEMPLATES -> "${paymentTemplates.count { it.enabled }} of ${paymentTemplates.size} active" to { showAddTemplateDialog = true }
+                        ManagePage.GPAY_REQUESTS -> plural(pendingGPayRequests.size, "pending request") to null
                         ManagePage.BACKUP -> null to null
                     }
  
@@ -277,6 +301,13 @@ fun ManagementScreen(
                             onConfirmImport = onConfirmImport,
                             onDismissState = onDismissBackupState,
                             onDismissImportState = onDismissImportState
+                        )
+                        ManagePage.GPAY_REQUESTS -> GPayRequestsSimplePage(
+                            requests = pendingGPayRequests,
+                            transactions = transactions,
+                            onMapToExpense = onMapGPayRequestToExpense,
+                            onCreateExpense = onCreateExpenseFromGPayRequest,
+                            onCreateExpensesBulk = onCreateExpensesFromGPayRequests
                         )
                     }
                 }
@@ -425,6 +456,242 @@ fun ManagementScreen(
             dismissButton = { TextButton(onClick = { deletingMapping = null }) { Text("Cancel") } }
         )
     }
+}
+
+@Composable
+private fun GPayRequestsSimplePage(
+    requests: List<GPayRequestEntity>,
+    transactions: List<com.example.expensetracker.model.Transaction>,
+    onMapToExpense: (requestId: String, transactionId: String) -> String?,
+    onCreateExpense: (requestId: String) -> String?,
+    onCreateExpensesBulk: (requestIds: List<String>) -> String?
+) {
+    val appColors = LocalAppColors.current
+    var selectedIds by remember(requests) { mutableStateOf(setOf<String>()) }
+    var mappingRequestId by remember { mutableStateOf<String?>(null) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var locallyHandledIds by remember { mutableStateOf(setOf<String>()) }
+
+    val visibleRequests = remember(requests, locallyHandledIds) {
+        requests.filterNot { locallyHandledIds.contains(it.id) }
+    }
+
+    LaunchedEffect(requests) {
+        val pendingIds = requests.map { it.id }.toSet()
+        locallyHandledIds = locallyHandledIds.intersect(pendingIds)
+        selectedIds = selectedIds.intersect(pendingIds)
+    }
+
+    val expenseTransactions = remember(transactions) {
+        transactions
+            .filter { it.type == com.example.expensetracker.model.TransactionType.EXPENSE }
+            .sortedByDescending { it.timestamp }
+            .take(120)
+    }
+
+    if (visibleRequests.isEmpty()) {
+        ManageEmptyState(
+            title = "No pending GPay requests",
+            message = "Captured payment requests will appear here for quick mapping or expense creation.",
+            actionLabel = null,
+            onAction = {}
+        )
+        return
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        ManageSurface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Selected: ${selectedIds.size}",
+                    color = appColors.ink,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Button(
+                    onClick = {
+                        val selected = selectedIds.toList()
+                        val error = onCreateExpensesBulk(selected)
+                        if (error == null) {
+                            locallyHandledIds = locallyHandledIds + selected
+                            selectedIds = emptySet()
+                        } else {
+                            errorMessage = error
+                        }
+                    },
+                    enabled = selectedIds.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(containerColor = appColors.accent)
+                ) {
+                    Text("Create expenses", color = appColors.accentInk)
+                }
+            }
+        }
+
+        LazyColumn(
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(visibleRequests, key = { it.id }) { request ->
+                ManageSurface {
+                    Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = selectedIds.contains(request.id),
+                                onCheckedChange = { checked ->
+                                    selectedIds = if (checked) selectedIds + request.id else selectedIds - request.id
+                                }
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = request.requesterRawName,
+                                    color = appColors.ink,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = request.description,
+                                    color = appColors.inkFaint,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(
+                                text = CurrencyFormatter.formatPaise(request.amountPaise),
+                                color = appColors.accent,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { mappingRequestId = request.id }) {
+                                Text("Map to expense")
+                            }
+                            TextButton(onClick = {
+                                val error = onCreateExpense(request.id)
+                                if (error != null) {
+                                    errorMessage = error
+                                } else {
+                                    locallyHandledIds = locallyHandledIds + request.id
+                                    selectedIds = selectedIds - request.id
+                                }
+                            }) {
+                                Text("Create expense")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    mappingRequestId?.let { requestId ->
+        MapRequestToExpenseDialog(
+            expenseTransactions = expenseTransactions,
+            onDismiss = { mappingRequestId = null },
+            onConfirm = { txId ->
+                val error = onMapToExpense(requestId, txId)
+                if (error == null) {
+                    locallyHandledIds = locallyHandledIds + requestId
+                    selectedIds = selectedIds - requestId
+                    mappingRequestId = null
+                } else {
+                    errorMessage = error
+                }
+            }
+        )
+    }
+
+    errorMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { errorMessage = null },
+            title = { Text("Action failed") },
+            text = { Text(msg) },
+            confirmButton = { TextButton(onClick = { errorMessage = null }) { Text("OK") } }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MapRequestToExpenseDialog(
+    expenseTransactions: List<com.example.expensetracker.model.Transaction>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var selectedTxId by remember { mutableStateOf<String?>(null) }
+    val selected = expenseTransactions.firstOrNull { it.id == selectedTxId }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Map to expense") },
+        text = {
+            Column {
+                Text("Pick an existing expense transaction")
+                Spacer(modifier = Modifier.height(8.dp))
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = !expanded }
+                ) {
+                    OutlinedTextField(
+                        value = selected?.let { "${it.title} • ${it.date} • ₹${it.amount}" } ?: "Select expense",
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                        },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        if (expenseTransactions.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("No expense transactions found") },
+                                onClick = { expanded = false },
+                                enabled = false
+                            )
+                        } else {
+                            expenseTransactions.forEach { tx ->
+                                DropdownMenuItem(
+                                    text = { Text("${tx.title} • ${tx.date} • ₹${tx.amount}") },
+                                    onClick = {
+                                        selectedTxId = tx.id
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { selectedTxId?.let(onConfirm) },
+                enabled = selectedTxId != null
+            ) { Text("Map") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
  
 // ───────────────────────── Hub ─────────────────────────

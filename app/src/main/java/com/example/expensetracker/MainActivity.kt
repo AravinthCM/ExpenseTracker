@@ -124,6 +124,7 @@ fun ExpenseTrackerApp(
     val isBalanceVisible by viewModel.isBalanceVisibleState.collectAsState()
     val backupExportState by viewModel.backupExportState.collectAsState()
     val backupImportState by viewModel.backupImportState.collectAsState()
+    val gPayRequests by viewModel.gPayRequestsState.collectAsState()
 
     val unassignedTransactionCount = remember(transactions) {
         transactions.count { it.accountId == null }
@@ -187,7 +188,7 @@ fun ExpenseTrackerApp(
                     containerColor = appColors.surface,
                     tonalElevation = 0.dp
                 ) {
-                    val navItems = listOf(Screen.Overview, Screen.Transactions, Screen.Analytics, Screen.Management, Screen.TestData)
+                    val navItems = listOf(Screen.Overview, Screen.Transactions, Screen.Analytics, Screen.Management)
                     navItems.forEach { screen ->
                         val selected = currentScreen == screen
                         NavigationBarItem(
@@ -324,6 +325,16 @@ fun ExpenseTrackerApp(
                             onAssignUnassignedTransactions = { accId -> viewModel.assignUnassignedTransactionsToAccount(accId) },
                             onAssignSelectedUnassigned = { transactionIds, accountId ->
                                 viewModel.assignUnassignedTransactionIdsToAccount(transactionIds, accountId)
+                            },
+                            gPayRequests = gPayRequests,
+                            onMapGPayRequestToExpense = { requestId, transactionId ->
+                                viewModel.mapGPayRequestToExpense(requestId, transactionId)
+                            },
+                            onCreateExpenseFromGPayRequest = { requestId ->
+                                viewModel.createSimpleExpenseFromGPayRequest(requestId)
+                            },
+                            onCreateExpensesFromGPayRequests = { requestIds ->
+                                viewModel.createExpensesFromGPayRequests(requestIds)
                             },
                             totalTransactionCount = transactions.size,
                             backupExportState = backupExportState,

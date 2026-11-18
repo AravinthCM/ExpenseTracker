@@ -638,7 +638,7 @@ fun TransactionDetailBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp)
-                .padding(bottom = 24.dp)
+                .padding(bottom = 20.dp)
         ) {
             // Header Row
             Row(
@@ -675,75 +675,83 @@ fun TransactionDetailBottomSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Big Amount Display
-            Text(
-                text = "$sign${CurrencyFormatter.format(transaction.amount)}",
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 28.sp
-                ),
-                color = amountColor
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Detail Rows
+            // Scrollable Content Area: Details, Edit History, and Notification
             Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
             ) {
-                DetailRow(label = "Type", value = transaction.type.name.lowercase().replaceFirstChar { it.uppercase() })
-                        DetailRow(label = "Category", value = transaction.displayCategoryName)
-                val sourceFormatted = when (transaction.source.name) {
-                    "GPAY" -> "GPay"
-                    "BANK_SMS" -> "Bank SMS"
-                    "BANK_EMAIL" -> "Bank Email"
-                    "NOTIFICATION" -> "Notification"
-                    "MANUAL" -> "Manual"
-                    else -> transaction.source.name
-                }
-                DetailRow(label = "Source", value = sourceFormatted)
-                DetailRow(label = "Date", value = transaction.date)
-                if (transaction.timestamp > 0) {
-                    val timeStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(transaction.timestamp))
-                    DetailRow(label = "Time", value = timeStr)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            EditHistorySection(editLogs = editLogs)
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Original Notification Box
-            if (transaction.originalText.isNotBlank()) {
+                // Big Amount Display
                 Text(
-                    text = "Notification",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = appColors.inkFaint
+                    text = "$sign${CurrencyFormatter.format(transaction.amount)}",
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 28.sp
+                    ),
+                    color = amountColor
                 )
-                Spacer(modifier = Modifier.height(6.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(appColors.surfaceAlt, RoundedCornerShape(12.dp))
-                        .heightIn(max = 140.dp)
-                        .verticalScroll(rememberScrollState())
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = transaction.originalText,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                        color = appColors.inkMuted
-                    )
-                }
+
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Detail Rows
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    DetailRow(label = "Type", value = transaction.type.name.lowercase().replaceFirstChar { it.uppercase() })
+                    DetailRow(label = "Category", value = transaction.displayCategoryName)
+                    val sourceFormatted = when (transaction.source.name) {
+                        "GPAY" -> "GPay"
+                        "BANK_SMS" -> "Bank SMS"
+                        "BANK_EMAIL" -> "Bank Email"
+                        "NOTIFICATION" -> "Notification"
+                        "MANUAL" -> "Manual"
+                        else -> transaction.source.name
+                    }
+                    DetailRow(label = "Source", value = sourceFormatted)
+                    DetailRow(label = "Date", value = transaction.date)
+                    if (transaction.timestamp > 0) {
+                        val timeStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(transaction.timestamp))
+                        DetailRow(label = "Time", value = timeStr)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                EditHistorySection(editLogs = editLogs)
+
+                // Original Notification Box
+                if (transaction.originalText.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Notification",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = appColors.inkFaint
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(appColors.surfaceAlt, RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            text = transaction.originalText,
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                            color = appColors.inkMuted
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Bottom Action Buttons (Edit & Delete)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Bottom Action Buttons (Edit & Delete) - Always accessible
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -891,9 +899,7 @@ private fun EditHistorySection(editLogs: List<TransactionEditLogEntity>) {
     }
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 220.dp),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = appColors.surfaceAlt),
         border = BorderStroke(1.dp, appColors.border),
@@ -902,7 +908,6 @@ private fun EditHistorySection(editLogs: List<TransactionEditLogEntity>) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
                 .padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -1061,13 +1066,16 @@ private fun DetailRow(label: String, value: String) {
         Text(
             text = label,
             fontSize = 13.5.sp,
-            color = appColors.inkMuted
+            color = appColors.inkMuted,
+            modifier = Modifier.weight(1f, fill = false)
         )
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = value,
             fontSize = 13.5.sp,
             fontWeight = FontWeight.SemiBold,
-            color = appColors.ink
+            color = appColors.ink,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End
         )
     }
 }

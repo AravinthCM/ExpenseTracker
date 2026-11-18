@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -25,12 +25,16 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,8 +42,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.expensetracker.data.backup.ImportMode
@@ -47,6 +53,7 @@ import com.example.expensetracker.data.backup.ImportPreviewSummary
 import com.example.expensetracker.ui.theme.BorderSubtle
 import com.example.expensetracker.ui.theme.LocalAppColors
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BackupImportPreviewDialog(
     summary: ImportPreviewSummary,
@@ -57,6 +64,7 @@ fun BackupImportPreviewDialog(
     val appColors = LocalAppColors.current
     var selectedMode by remember { mutableStateOf(ImportMode.MERGE) }
     var showFullReplaceConfirm by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     if (showFullReplaceConfirm) {
         AlertDialog(
@@ -95,26 +103,67 @@ fun BackupImportPreviewDialog(
         )
     }
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = { if (!isImporting) onDismiss() },
-        title = {
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+        containerColor = appColors.surface,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 10.dp, bottom = 14.dp)
+                    .width(36.dp)
+                    .height(4.dp)
+                    .background(appColors.border, RoundedCornerShape(3.dp))
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 20.dp)
+        ) {
+            // Header Row
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "Backup Import Preview",
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp,
-                    color = appColors.ink
+                    color = appColors.ink,
+                    modifier = Modifier.weight(1f)
                 )
+
+                if (!isImporting) {
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(appColors.surfaceAlt)
+                            .clickable { onDismiss() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = appColors.inkMuted,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
             }
-        },
-        text = {
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Scrollable content
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 480.dp)
+                    .weight(1f, fill = false)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -253,7 +302,8 @@ fun BackupImportPreviewDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         PreviewDetailRow("Accounts", "${summary.accountsCount}", appColors)
                         PreviewDetailRow("Categories", "${summary.categoriesCount}", appColors)
@@ -345,51 +395,72 @@ fun BackupImportPreviewDialog(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(4.dp))
             }
-        },
-        confirmButton = {
-            if (isImporting) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = appColors.accent,
-                    strokeWidth = 2.5.dp
-                )
-            } else {
-                Button(
-                    onClick = {
-                        if (selectedMode == ImportMode.RESTORE_REPLACE) {
-                            showFullReplaceConfirm = true
-                        } else {
-                            onConfirmImport(ImportMode.MERGE)
-                        }
-                    },
-                    enabled = summary.isRestoreSafe,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (selectedMode == ImportMode.RESTORE_REPLACE) appColors.negative else appColors.accent,
-                        contentColor = appColors.accentInk
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = if (selectedMode == ImportMode.RESTORE_REPLACE) "Restore Database" else "Merge Data",
-                        fontWeight = FontWeight.SemiBold
-                    )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Bottom Action Buttons – always pinned at bottom
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (!isImporting) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(13.dp),
+                        border = BorderStroke(1.dp, BorderSubtle),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp)
+                    ) {
+                        Text("Cancel", color = appColors.inkMuted, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                if (isImporting) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = appColors.accent,
+                            strokeWidth = 2.5.dp
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            if (selectedMode == ImportMode.RESTORE_REPLACE) {
+                                showFullReplaceConfirm = true
+                            } else {
+                                onConfirmImport(ImportMode.MERGE)
+                            }
+                        },
+                        enabled = summary.isRestoreSafe,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedMode == ImportMode.RESTORE_REPLACE) appColors.negative else appColors.accent,
+                            contentColor = appColors.accentInk
+                        ),
+                        shape = RoundedCornerShape(13.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp)
+                    ) {
+                        Text(
+                            text = if (selectedMode == ImportMode.RESTORE_REPLACE) "Restore Database" else "Merge Data",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
+                    }
                 }
             }
-        },
-        dismissButton = {
-            if (!isImporting) {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, BorderSubtle)
-                ) {
-                    Text("Cancel", color = appColors.inkMuted)
-                }
-            }
-        },
-        containerColor = appColors.surface
-    )
+        }
+    }
 }
 
 @Composable
@@ -398,12 +469,10 @@ private fun PreviewDetailRow(
     value: String,
     appColors: com.example.expensetracker.ui.theme.AppColors
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(vertical = 3.dp)
     ) {
         Text(
             text = label,

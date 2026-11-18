@@ -15,7 +15,12 @@ import com.example.expensetracker.data.local.toEntity
 import com.example.expensetracker.model.GPayMatchStatus
 import com.example.expensetracker.model.GPayRequestMatcher
 import com.example.expensetracker.model.Transaction
+import com.example.expensetracker.model.TransactionCategory
+import com.example.expensetracker.model.TransactionSource
 import com.example.expensetracker.model.TransactionType
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -1008,6 +1013,81 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
             }
             is com.example.expensetracker.model.GPayExpenseCreationResult.Error -> result.message
         }
+    }
+
+    /** Links a pending request to an already-existing expense transaction and closes it. */
+    fun mapGPayRequestToExpense(requestId: String, transactionId: String): String? = runBlocking(Dispatchers.IO) {
+        val request = gPayRequestDao.getByIdSync(requestId)
+            ?: return@runBlocking "Request not found."
+        val tx = transactionDao.getTransactionByIdSync(transactionId)
+            ?: return@runBlocking "Expense transaction not found."
+        if (tx.type != TransactionType.EXPENSE.name) {
+            return@runBlocking "Selected transaction is not an expense."
+        }
+
+        gPayRequestDao.upsert(
+            request.copy(
+                processingStatus = com.example.expensetracker.model.GPayProcessingStatus.DISMISSED,
+                linkedTransactionId = tx.id,
+                paymentConfirmationTransactionId = tx.id,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+        null
+    }
+
+    /** Bulk create expenses for selected requests; returns null on full success, else an error summary. */
+    fun createExpensesFromGPayRequests(requestIds: List<String>): String? {
+        if (requestIds.isEmpty()) return "No requests selected."
+        var failed = 0
+        var firstError: String? = null
+
+        requestIds.forEach { requestId ->
+            val error = createSimpleExpenseFromGPayRequest(requestId)
+            if (error != null) {
+                failed += 1
+                if (firstError == null) firstError = error
+            }
+        }
+
+        return if (failed == 0) null else "$failed request(s) failed. ${firstError ?: ""}".trim()
+    }
+
+    /** Creates a plain expense transaction from a GPay request without requiring split-group resolution. */
+    fun createSimpleExpenseFromGPayRequest(requestId: String): String? = runBlocking(Dispatchers.IO) {
+        val request = gPayRequestDao.getByIdSync(requestId)
+            ?: return@runBlocking "Request not found."
+        if (request.processingStatus != com.example.expensetracker.model.GPayProcessingStatus.PENDING) {
+            return@runBlocking "Request is already processed."
+        }
+
+        val ts = request.postTime.takeIf { it > 0 } ?: System.currentTimeMillis()
+        val date = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(ts))
+        val title = request.description.ifBlank { "GPay request from ${request.requesterRawName}" }
+
+        val tx = TransactionEntity(
+            id = UUID.randomUUID().toString(),
+            title = title,
+            amount = request.amountPaise / 100.0,
+            type = TransactionType.EXPENSE.name,
+            category = TransactionCategory.OTHER.name.lowercase().replaceFirstChar { it.uppercase() },
+            date = date,
+            source = TransactionSource.GPAY.name,
+            timestamp = ts,
+            originalText = request.originalText
+        )
+
+        db.runInTransaction {
+            transactionDao.insertTransaction(tx)
+            gPayRequestDao.upsert(
+                request.copy(
+                    processingStatus = com.example.expensetracker.model.GPayProcessingStatus.ADDED_AS_EXPENSE,
+                    linkedTransactionId = tx.id,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+        null
     }
 
     /** Confirms a detected real GPay payment as the repayment settling the given request. */
