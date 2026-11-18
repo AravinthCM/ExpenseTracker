@@ -40,6 +40,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.expensetracker.ui.viewmodel.GoogleAccountViewModel
 import com.example.expensetracker.model.Transaction
 import com.example.expensetracker.model.TransactionCategory
 import com.example.expensetracker.model.TransactionSource
@@ -108,8 +110,12 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseTrackerApp(
-    viewModel: TransactionViewModel = viewModel()
+    viewModel: TransactionViewModel = viewModel(),
+    googleAccountViewModel: GoogleAccountViewModel = viewModel()
 ) {
+    val activityContext = LocalContext.current
+    val googleAccount by googleAccountViewModel.connectedAccount.collectAsState()
+    val googleUiState by googleAccountViewModel.uiState.collectAsState()
     val transactions by viewModel.transactionsState.collectAsState()
     val categories by viewModel.categoriesState.collectAsState()
     val transactionEditLogs by viewModel.transactionEditLogsState.collectAsState()
@@ -345,6 +351,12 @@ fun ExpenseTrackerApp(
                             onImportBackupFile = { uri -> viewModel.loadAndValidateBackup(uri) },
                             onConfirmImport = { mode -> viewModel.confirmImport(mode) },
                             onDismissImportState = { viewModel.resetBackupImportState() },
+                            googleAccount = googleAccount,
+                            googleAccountLoading = googleUiState == GoogleAccountViewModel.UiState.Loading,
+                            googleAccountError = (googleUiState as? GoogleAccountViewModel.UiState.Error)?.message,
+                            onGoogleSignIn = { googleAccountViewModel.signIn(activityContext) },
+                            onGoogleDisconnect = { googleAccountViewModel.disconnect() },
+                            onDismissGoogleError = { googleAccountViewModel.dismissError() },
                             onNavigateBack = { currentScreen = Screen.Overview }
                         )
                     }

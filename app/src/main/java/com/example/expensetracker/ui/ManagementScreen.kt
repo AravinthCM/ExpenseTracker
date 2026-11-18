@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -67,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.expensetracker.data.local.CategoryEntity
+import com.example.expensetracker.data.preferences.GoogleAccountInfo
 import com.example.expensetracker.data.local.CategoryMappingEntity
 import com.example.expensetracker.data.local.GPayRequestEntity
 import com.example.expensetracker.model.GPayProcessingStatus
@@ -152,6 +154,12 @@ fun ManagementScreen(
     onConfirmImport: (com.example.expensetracker.data.backup.ImportMode) -> Unit = {},
     onDismissBackupState: () -> Unit = {},
     onDismissImportState: () -> Unit = {},
+    googleAccount: GoogleAccountInfo? = null,
+    googleAccountLoading: Boolean = false,
+    googleAccountError: String? = null,
+    onGoogleSignIn: () -> Unit = {},
+    onGoogleDisconnect: () -> Unit = {},
+    onDismissGoogleError: () -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     var page by remember(initialSelectedTab, initialSampleForTemplate) {
@@ -233,7 +241,13 @@ fun ManagementScreen(
                 ManageHub(
                     unassignedCount = unassignedTransactionCount,
                     groups = hubGroups,
-                    onOpen = { page = it }
+                    onOpen = { page = it },
+                    googleAccount = googleAccount,
+                    googleAccountLoading = googleAccountLoading,
+                    googleAccountError = googleAccountError,
+                    onGoogleSignIn = onGoogleSignIn,
+                    onGoogleDisconnect = onGoogleDisconnect,
+                    onDismissGoogleError = onDismissGoogleError
                 )
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -700,7 +714,13 @@ private fun MapRequestToExpenseDialog(
 private fun ManageHub(
     unassignedCount: Int,
     groups: List<Pair<String, List<HubItem>>>,
-    onOpen: (ManagePage) -> Unit
+    onOpen: (ManagePage) -> Unit,
+    googleAccount: GoogleAccountInfo?,
+    googleAccountLoading: Boolean,
+    googleAccountError: String?,
+    onGoogleSignIn: () -> Unit,
+    onGoogleDisconnect: () -> Unit,
+    onDismissGoogleError: () -> Unit
 ) {
     val appColors = LocalAppColors.current
  
@@ -763,6 +783,34 @@ private fun ManageHub(
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("GOOGLE ACCOUNT", style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp
+            ), color = appColors.inkFaint, modifier = Modifier.padding(start = 4.dp))
+            ManageSurface {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (googleAccount == null) {
+                        Text("Connect your Google account", fontWeight = FontWeight.SemiBold, color = appColors.ink)
+                        Button(onClick = onGoogleSignIn, enabled = !googleAccountLoading) {
+                            if (googleAccountLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Text("Continue with Google")
+                        }
+                    } else {
+                        Text(googleAccount.displayName, fontWeight = FontWeight.SemiBold, color = appColors.ink)
+                        Text(googleAccount.email, color = appColors.inkMuted)
+                        TextButton(onClick = onGoogleDisconnect, enabled = !googleAccountLoading) {
+                            if (googleAccountLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Text("Disconnect")
+                        }
+                    }
+                    if (googleAccountError != null) {
+                        Text(googleAccountError, color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = onDismissGoogleError) { Text("Dismiss") }
                     }
                 }
             }
@@ -1149,4 +1197,3 @@ private fun AddOrEditMappingDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
- 

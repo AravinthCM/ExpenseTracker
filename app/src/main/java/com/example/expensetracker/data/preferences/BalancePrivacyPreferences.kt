@@ -9,10 +9,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.balancePrivacyDataStore by preferencesDataStore(name = "expense_tracker_preferences")
+internal val Context.expenseTrackerDataStore by preferencesDataStore(name = "expense_tracker_preferences")
 
 class BalancePrivacyPreferences(private val dataStore: DataStore<Preferences>) {
-    constructor(context: Context) : this(context.balancePrivacyDataStore)
+    constructor(context: Context) : this(context.expenseTrackerDataStore)
 
     private val balanceVisibilityKey = booleanPreferencesKey("balance_visibility")
 

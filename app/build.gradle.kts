@@ -45,6 +45,11 @@ dependencies {
     // Persistent UI preferences
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
+    // Credential Manager Google sign-in
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+
     // Android 12+ SplashScreen API
     implementation("androidx.core:core-splashscreen:1.0.1")
 
